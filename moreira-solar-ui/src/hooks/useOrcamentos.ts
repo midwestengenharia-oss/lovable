@@ -10,50 +10,77 @@ export function useOrcamentos() {
     queryKey: ['orcamentos'],
     queryFn: async () => {
       // 🔐 Recupera o usuário logado do sessionStorage
-      const userData = sessionStorage.getItem("usuario_logado");
+      let userData = sessionStorage.getItem("usuario_logado");
+
+      // 🧠 Caso ainda não tenha sido salvo (login recente ou refresh), tenta restaurar do Supabase
       if (!userData) {
-        console.warn("⚠️ Nenhum usuário logado encontrado no sessionStorage.");
-        return [];
+        const { data } = await supabase.auth.getSession();
+        const sessao = data?.session;
+        if (sessao?.user) {
+          const user = sessao.user;
+          const meta = user.user_metadata || {};
+          const usuario_logado = {
+            id: user.id,
+            nome: meta.nome || "Usuário",
+            tipo: meta.perfil || "vendedor",
+            email: user.email,
+          };
+          sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
+          userData = JSON.stringify(usuario_logado);
+          console.log("🔁 Sessão restaurada automaticamente:", usuario_logado);
+        } else {
+          console.warn("⚠️ Nenhum usuário logado encontrado (nem sessionStorage nem Supabase).");
+          return [];
+        }
       }
 
       const user = JSON.parse(userData);
       console.log("👤 Usuário logado:", user);
 
-      // Base query
-      let query = supabase.from("orcamentos").select("*").order("data", { ascending: false });
+      // --- Base Query ---
+      let query = supabase
+        .from("orcamentos")
+        .select("*")
+        .order("data", { ascending: false });
 
-      // Filtros de acordo com o perfil
-      if (user.perfil === "admin") {
+      // --- Filtros por perfil ---
+      const perfil = user.tipo || user.perfil; // compatibilidade entre chaves antigas e novas
+
+      if (perfil === "admin") {
         console.log("👑 Admin logado — carregando todos os orçamentos.");
         // sem filtro
       }
-      else if (user.perfil === "gestor") {
-        console.log("🧭 Gestor logado — carregando orçamentos dos vendedores:", user.vendedores_ids);
-        if (user.vendedores_ids && user.vendedores_ids.length > 0) {
+      else if (perfil === "gestor") {
+        console.log("🧭 Gestor logado — filtrando orçamentos dos vendedores:", user.vendedores_ids);
+        if (user.vendedores_ids?.length > 0) {
           query = query.in("vendedor_id", user.vendedores_ids);
         } else {
           console.warn("⚠️ Gestor sem vendedores associados.");
           return [];
         }
       }
-      else if (user.perfil === "vendedor") {
-        console.log("🧑‍💼 Vendedor logado — carregando orçamentos dele mesmo:", user.id);
+      else if (perfil === "vendedor") {
+        console.log("🧑‍💼 Vendedor logado — filtrando orçamentos dele mesmo:", user.id);
         query = query.eq("vendedor_id", user.id);
       }
       else {
-        console.warn("⚠️ Perfil de usuário desconhecido:", user.perfil);
+        console.warn("⚠️ Perfil de usuário desconhecido:", perfil);
         return [];
       }
 
+      // --- Execução da query ---
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) {
+        console.error("❌ Erro ao buscar orçamentos:", error.message);
+        throw error;
+      }
 
       console.log(`📦 ${data?.length || 0} orçamentos carregados do Supabase.`);
       return data as Orcamento[];
     }
   });
 
-  // --- Mutations ---
+  // --- MUTATIONS ---
   const addOrcamento = useMutation({
     mutationFn: async (orcamento: Omit<Orcamento, 'id' | 'user_id'>) => {
       const { data: { user } } = await supabase.auth.getUser();
