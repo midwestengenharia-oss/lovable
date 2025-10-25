@@ -80,20 +80,6 @@ export default function CalculadoraFinanciamento() {
       return;
     }
 
-    addSimulacao({
-      ...resultado,
-      parcelaSelecionada,
-      prestacao: detalhes.prestacao,
-      economiaMensal: detalhes.economiaMensal,
-      economiaPercentual: detalhes.economiaPercentual,
-      paybackMeses: detalhes.paybackMeses,
-      paybackAnos: detalhes.paybackAnos,
-      economiaTotal30Anos: detalhes.economiaTotal30Anos,
-      ganhosDuranteParcelas: detalhes.ganhosDuranteParcelas,
-      tabelaEconomia: detalhes.tabelaEconomia,
-      status: "orcamento",
-    });
-
     addOrcamento({
       cliente: resultado.clienteNome || "Cliente não informado",
       conta: resultado.valorConta,

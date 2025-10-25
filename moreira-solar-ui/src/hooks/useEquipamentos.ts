@@ -5,7 +5,7 @@ export interface Equipamento {
   id: string;
   tipo: 'modulo' | 'inversor';
   nome: string;
-  potencia_w?: number;
+  potenciaW?: number;
   valor: number;
   ativo: boolean;
 }
@@ -19,9 +19,18 @@ export function useEquipamentos() {
         .select('*')
         .eq('ativo', true)
         .order('tipo', { ascending: true });
-      
+
       if (error) throw error;
-      return data as Equipamento[];
+
+      // Mapear snake_case para camelCase
+      return (data || []).map(item => ({
+        id: item.id,
+        tipo: item.tipo as 'modulo' | 'inversor',
+        nome: item.nome,
+        potenciaW: item.potencia_w,
+        valor: item.valor,
+        ativo: item.ativo
+      })) as Equipamento[];
     }
   });
 

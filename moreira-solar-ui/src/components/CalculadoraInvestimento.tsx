@@ -50,6 +50,18 @@ export default function CalculadoraInvestimento() {
       return;
     }
 
+    const taxaCompraNum = parseFloat(taxaCompra);
+    if (!taxaCompraNum || taxaCompraNum <= 0) {
+      toast.error("Informe a taxa de compra de energia");
+      return;
+    }
+
+    const prazoNum = parseInt(prazoContrato);
+    if (!prazoNum || prazoNum <= 0) {
+      toast.error("Informe o prazo do contrato");
+      return;
+    }
+
     const clienteObj = clientes.find((c) => c.id === clienteSelecionado);
 
     const simulacao = executarSimulacao(
@@ -75,19 +87,18 @@ export default function CalculadoraInvestimento() {
     // Cálculos de Investimento
     const investimentoTotal = simulacao.valorTotal;
     const geracaoMensal = simulacao.geracaoReal;
-    const taxaCompraNum = parseFloat(taxaCompra);
-    const prazoNum = parseInt(prazoContrato);
-    const tarifaBase = tarifaCustom ? parseFloat(tarifaCustom) : parametros?.tarifaComercial;
-    const tarifaVendaGC = tarifaBase * (1 - parametros?.descontoVendaGC);
+    const tarifaBase = tarifaCustom ? parseFloat(tarifaCustom) : parametros?.tarifaComercial || 1.1;
+    const tarifaVendaGC = tarifaBase * (1 - (parametros?.descontoVendaGC || 0.20));
     
     const receitaMensal = geracaoMensal * taxaCompraNum;
     const receitaAnual = receitaMensal * 12;
-    
+
     // Calcular receita total com reajuste anual
     let receitaTotal = 0;
     const tabelaProjecao: Array<{ ano: number; receitaAnual: number; receitaAcumulada: number; taxaCompra: number }> = [];
     let taxaAjustada = taxaCompraNum;
-    
+    const reajusteMedio = parametros?.reajusteMedio || 0.08;
+
     for (let ano = 1; ano <= prazoNum; ano++) {
       const receitaAnoAtual = geracaoMensal * 12 * taxaAjustada;
       receitaTotal += receitaAnoAtual;
@@ -97,7 +108,7 @@ export default function CalculadoraInvestimento() {
         receitaAcumulada: receitaTotal,
         taxaCompra: taxaAjustada,
       });
-      taxaAjustada *= (1 + parametros?.reajusteMedio);
+      taxaAjustada *= (1 + reajusteMedio);
     }
     
     const roi = ((receitaTotal - investimentoTotal) / investimentoTotal) * 100;
