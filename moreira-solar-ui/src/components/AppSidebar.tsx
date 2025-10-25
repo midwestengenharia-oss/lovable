@@ -4,7 +4,6 @@ import {
   Calculator,
   Users,
   FileText,
-  FileCheck,
   Layers,
   Headphones,
   Link2,
@@ -27,7 +26,9 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
-import logoMoreira from "@/assets/logo-moreira.png";
+import { useTheme } from "@/contexts/ThemeContext"; // 👈 Importa o tema
+import logoMoreiraLight from "@/assets/logo-moreira.png"; // logo para modo claro
+import logoMoreiraDark from "@/assets/logo-moreira-branco.png"; // logo para modo escuro
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -46,42 +47,53 @@ const menuItems = [
 
 export function AppSidebar() {
   const { open } = useSidebar();
+  const { theme } = useTheme(); // 👈 acessa o tema atual
+  const logo = theme === "dark" ? logoMoreiraDark : logoMoreiraLight;
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-border">
+    <Sidebar collapsible="icon" className="border-r border-border bg-sidebar text-sidebar-foreground transition-colors">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-lg font-bold flex items-center gap-2 px-4 py-4">
+          {/* Cabeçalho do menu lateral */}
+          <SidebarGroupLabel className="text-lg font-bold flex items-center justify-center px-4 py-6">
             {open ? (
-              <img src={logoMoreira} alt="Moreira Solar" className="h-6 w-auto" />
+              <img
+                src={logo}
+                alt="Moreira Solar"
+                className="h-8 w-auto select-none transition-all duration-300 drop-shadow-sm"
+              />
             ) : (
               <Sun className="h-5 w-5 text-primary" />
             )}
           </SidebarGroupLabel>
+
+          {/* Itens do menu */}
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild>
-                      <NavLink
-                        to={item.url}
-                        end
-                        className={({ isActive }) =>
-                          isActive
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                            : "hover:bg-sidebar-accent/50"
-                        }
-                      >
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to={item.url}
+                      end
+                      className={({ isActive }) =>
+                        isActive
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          : "hover:bg-sidebar-accent/50 transition-colors"
+                      }
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      {/* Rodapé com link de perfil */}
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -91,10 +103,10 @@ export function AppSidebar() {
                 className={({ isActive }) =>
                   isActive
                     ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    : "hover:bg-sidebar-accent/50"
+                    : "hover:bg-sidebar-accent/50 transition-colors"
                 }
               >
-                <User className="h-4 w-4" />
+                <User className="h-4 w-4 shrink-0" />
                 <span>Meu Perfil</span>
               </NavLink>
             </SidebarMenuButton>

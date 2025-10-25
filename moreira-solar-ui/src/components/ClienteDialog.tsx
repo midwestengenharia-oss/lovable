@@ -39,8 +39,10 @@ export function ClienteDialog({ open, onOpenChange, onClienteCreated, clienteId,
     observacoes: "",
   });
 
-  // Load cliente data when in edit mode
+  // ✅ Corrigido: evita loop infinito
   useEffect(() => {
+    if (!open) return; // só roda quando o diálogo abrir
+
     if (mode === "edit" && clienteId) {
       const cliente = clientes.find((c) => c.id === clienteId);
       if (cliente) {
@@ -65,7 +67,7 @@ export function ClienteDialog({ open, onOpenChange, onClienteCreated, clienteId,
         });
       }
     } else if (mode === "create") {
-      // Reset form when switching to create mode
+      // Resetar formulário ao abrir para criar
       setFormData({
         nome: "",
         cpf_cnpj: "",
@@ -86,7 +88,9 @@ export function ClienteDialog({ open, onOpenChange, onClienteCreated, clienteId,
         observacoes: "",
       });
     }
-  }, [mode, clienteId, clientes]);
+  }, [open, mode, clienteId]); // 🔥 'clientes' removido
+
+
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

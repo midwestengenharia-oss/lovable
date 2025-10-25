@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useLeads } from "@/hooks/useLeads";
 import { Lead } from "@/types/supabase";
-import { Plus, Search, Pencil, Trash2, Phone, Mail, MapPin } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Phone, Mail, MapPin, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { ViewToggle } from "@/components/kanban/ViewToggle";
 import { KanbanBoard } from "@/components/kanban/KanbanBoard";
@@ -16,6 +16,7 @@ import { KanbanCardData } from "@/components/kanban/KanbanCard";
 import { SidePanel } from "@/components/panels/SidePanel";
 import { Timeline, TimelineEvent } from "@/components/shared/Timeline";
 import { DropResult } from "@hello-pangea/dnd";
+import { supabase } from "@/lib/supabase";
 
 export default function CRM() {
   const { leads, isLoading, addLead, updateLead, deleteLead } = useLeads();
@@ -26,7 +27,7 @@ export default function CRM() {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  
+
   const [formData, setFormData] = useState<Omit<Lead, "id" | "user_id" | "created_at" | "updated_at">>({
     data: new Date().toISOString().split("T")[0],
     cliente: "",
@@ -96,16 +97,17 @@ export default function CRM() {
       Qualificado: "bg-secondary text-secondary-foreground",
       "Follow-up": "bg-accent text-accent-foreground",
       Perdido: "bg-destructive text-destructive-foreground",
+      Convertido: "bg-success text-success-foreground",
     };
-    return <Badge className={variants[status]}>{status}</Badge>;
+    return <Badge className={variants[status] || "bg-muted"}>{status}</Badge>;
   };
 
-  // Kanban
   const kanbanColumns = [
     { id: "Novo", title: "Novo", color: "#3b82f6" },
     { id: "Qualificado", title: "Qualificado", color: "#10b981" },
     { id: "Follow-up", title: "Follow-up", color: "#f59e0b" },
     { id: "Perdido", title: "Perdido", color: "#ef4444" },
+    { id: "Convertido", title: "Convertido", color: "#22c55e" },
   ];
 
   const getKanbanData = () => {
@@ -144,13 +146,68 @@ export default function CRM() {
     }
   };
 
-  const handleCardClick = (card: KanbanCardData) => {
-    const lead = leads.find((l) => l.id === card.id);
-    if (lead) {
-      setSelectedLead(lead);
-      setPanelOpen(true);
+  const handleConvertLead = async (lead: Lead) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Usuário não autenticado");
+        return;
+      }
+
+      // ✅ Verifica se já existe cliente com o mesmo telefone ou email
+      const { data: existing, error: existingError } = await supabase
+        .from("clientes")
+        .select("id, nome, telefone, email")
+        .or(`telefone.eq.${lead.telefone},email.eq.${lead.email}`)
+        .eq("user_id", user.id)
+        .limit(1);
+
+      if (existingError) throw existingError;
+
+      if (existing && existing.length > 0) {
+        toast.warning(`Cliente "${lead.cliente}" já existe na base.`);
+
+        // Atualiza o status sem disparar o toast padrão
+        await supabase
+          .from("leads")
+          .update({ status: "Convertido" })
+          .eq("id", lead.id);
+
+        return;
+      }
+
+      // ✅ Detecta se é Pessoa Física ou Jurídica automaticamente
+      const tipoPessoa =
+        lead.cpf_cnpj && lead.cpf_cnpj.replace(/\D/g, "").length > 11
+          ? "PJ"
+          : "PF";
+
+      // ✅ Insere novo cliente se não existir
+      const { error: insertError } = await supabase.from("clientes").insert([
+        {
+          nome: lead.cliente,
+          telefone: lead.telefone,
+          email: lead.email,
+          cidade: lead.cidade,
+          estado: lead.uf,
+          origem: lead.fonte || "CRM",
+          tipo_pessoa: tipoPessoa,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      if (insertError) throw insertError;
+
+      await updateLead({ id: lead.id, status: "Convertido" });
+      toast.success(`Lead convertido em cliente com sucesso!`);
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Erro ao converter lead em cliente.");
     }
   };
+
+
 
   const getMockTimeline = (lead: Lead): TimelineEvent[] => [
     {
@@ -159,14 +216,6 @@ export default function CRM() {
       description: `Lead ${lead.cliente} foi criado no sistema`,
       date: new Date(lead.data),
       type: "info",
-      user: "Usuário",
-    },
-    {
-      id: "2",
-      title: "Status atualizado",
-      description: `Status alterado para ${lead.status}`,
-      date: new Date(),
-      type: "success",
       user: "Usuário",
     },
   ];
@@ -190,38 +239,35 @@ export default function CRM() {
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cliente">Cliente *</Label>
+                  <div>
+                    <Label>Cliente *</Label>
                     <Input
-                      id="cliente"
                       value={formData.cliente}
                       onChange={(e) => setFormData({ ...formData, cliente: e.target.value })}
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="telefone">Telefone *</Label>
+                  <div>
+                    <Label>Telefone *</Label>
                     <Input
-                      id="telefone"
                       value={formData.telefone}
                       onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">E-mail *</Label>
+                  <div>
+                    <Label>Email *</Label>
                     <Input
-                      id="email"
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="fonte">Fonte</Label>
+                  <div>
+                    <Label>Fonte</Label>
                     <Select value={formData.fonte} onValueChange={(v) => setFormData({ ...formData, fonte: v })}>
-                      <SelectTrigger id="fonte">
+                      <SelectTrigger>
                         <SelectValue placeholder="Selecione" />
                       </SelectTrigger>
                       <SelectContent>
@@ -233,27 +279,25 @@ export default function CRM() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cidade">Cidade</Label>
+                  <div>
+                    <Label>Cidade</Label>
                     <Input
-                      id="cidade"
                       value={formData.cidade}
                       onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="uf">UF</Label>
+                  <div>
+                    <Label>UF</Label>
                     <Input
-                      id="uf"
                       maxLength={2}
                       value={formData.uf}
                       onChange={(e) => setFormData({ ...formData, uf: e.target.value.toUpperCase() })}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={formData.status} onValueChange={(v: any) => setFormData({ ...formData, status: v })}>
-                      <SelectTrigger id="status">
+                  <div>
+                    <Label>Status</Label>
+                    <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
+                      <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -264,7 +308,6 @@ export default function CRM() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* Campo Dono removido - RLS controla atribuição automática */}
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
@@ -298,16 +341,13 @@ export default function CRM() {
             <SelectItem value="Qualificado">Qualificado</SelectItem>
             <SelectItem value="Follow-up">Follow-up</SelectItem>
             <SelectItem value="Perdido">Perdido</SelectItem>
+            <SelectItem value="Convertido">Convertido</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {view === "kanban" ? (
-        <KanbanBoard
-          columns={getKanbanData()}
-          onDragEnd={handleDragEnd}
-          onCardClick={handleCardClick}
-        />
+        <KanbanBoard columns={getKanbanData()} onDragEnd={handleDragEnd} />
       ) : (
         <div className="rounded-md border">
           <Table>
@@ -330,15 +370,16 @@ export default function CRM() {
                   <TableCell className="font-medium">{lead.cliente}</TableCell>
                   <TableCell>{lead.telefone}</TableCell>
                   <TableCell>{lead.email}</TableCell>
-                  <TableCell>
-                    {lead.cidade}/{lead.uf}
-                  </TableCell>
+                  <TableCell>{lead.cidade}/{lead.uf}</TableCell>
                   <TableCell>{lead.fonte}</TableCell>
                   <TableCell>{getStatusBadge(lead.status)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(lead)}>
                         <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleConvertLead(lead)}>
+                        <UserPlus className="h-4 w-4 text-green-600" />
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(lead.id)}>
                         <Trash2 className="h-4 w-4" />
@@ -350,64 +391,6 @@ export default function CRM() {
             </TableBody>
           </Table>
         </div>
-      )}
-
-      {/* Panel lateral de detalhes */}
-      {selectedLead && (
-        <SidePanel
-          open={panelOpen}
-          onClose={() => setPanelOpen(false)}
-          title={selectedLead.cliente}
-          description={`Lead cadastrado em ${selectedLead.data}`}
-          tabs={[
-            {
-              id: "detalhes",
-              label: "Detalhes",
-              content: (
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
-                      <span>{selectedLead.telefone}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      <span>{selectedLead.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <MapPin className="h-4 w-4 text-muted-foreground" />
-                      <span>{selectedLead.cidade}/{selectedLead.uf}</span>
-                    </div>
-                  </div>
-                  <div className="space-y-2 pt-4 border-t">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Fonte:</span>
-                      <span className="font-medium">{selectedLead.fonte || "Não informado"}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Status:</span>
-                      {getStatusBadge(selectedLead.status)}
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Responsável:</span>
-                      <span className="font-medium">Usuário</span>
-                    </div>
-                  </div>
-                  <div className="pt-4">
-                    <Button className="w-full" onClick={() => handleOpenDialog(selectedLead)}>
-                      Editar Lead
-                    </Button>
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: "historico",
-              label: "Histórico",
-              content: <Timeline events={getMockTimeline(selectedLead)} />,
-            },
-          ]}
-        />
       )}
     </div>
   );

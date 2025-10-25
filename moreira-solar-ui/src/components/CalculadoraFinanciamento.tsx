@@ -26,7 +26,7 @@ export default function CalculadoraFinanciamento() {
   const [clienteSelecionado, setClienteSelecionado] = useState("");
   const [estruturaSolo, setEstruturaSolo] = useState(false);
   const [clienteDialogOpen, setClienteDialogOpen] = useState(false);
-  
+
   const [resultado, setResultado] = useState<SimulacaoResult | null>(null);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<number | null>(null);
   const [detalhes, setDetalhes] = useState<DetalhesParcelaResult | null>(null);
@@ -103,7 +103,7 @@ export default function CalculadoraFinanciamento() {
       economia_mensal: resultado.economiaMensal || 0,
       economia_percentual: resultado.economiaPercentual || 0,
       payback_meses: resultado.paybackMeses || null,
-      status: "pendente"
+      status: "Rascunho"
     });
 
     toast.success("Orçamento salvo com sucesso!");
@@ -244,9 +244,8 @@ export default function CalculadoraFinanciamento() {
               {resultado.opcoesParcelamento.map((opc) => (
                 <Card
                   key={opc.parcelas}
-                  className={`cursor-pointer transition-all ${
-                    parcelaSelecionada === opc.parcelas ? "ring-2 ring-primary" : "hover:shadow-lg"
-                  }`}
+                  className={`cursor-pointer transition-all ${parcelaSelecionada === opc.parcelas ? "ring-2 ring-primary" : "hover:shadow-lg"
+                    }`}
                   onClick={() => handleSelecionarParcela(opc.parcelas)}
                 >
                   <CardContent className="pt-6 text-center">

@@ -10,11 +10,11 @@ import { useParametros } from "@/hooks/useParametros";
 import { useClientes } from "@/hooks/useClientes";
 import { useOrcamentos } from "@/hooks/useOrcamentos";
 import { ClienteDialog } from "@/components/ClienteDialog";
-import { 
-  calcularPaybackEmMeses, 
-  calculateTotalSaving, 
-  formatarMoeda, 
-  formatarPorcentagem 
+import {
+  calcularPaybackEmMeses,
+  calculateTotalSaving,
+  formatarMoeda,
+  formatarPorcentagem
 } from "@/lib/calculadoraSolar";
 import { toast } from "sonner";
 import { Calculator, DollarSign } from "lucide-react";
@@ -129,8 +129,8 @@ export default function CalculadoraManual() {
     const contaBase = geracaoKwh > 0 ? geracaoKwh * tarifaInf : vConta;
 
     // 3. Custo estrutura de solo
-    const custoEstrutSolo = nModulos > 0 && estrutPorPlaca > 0 
-      ? nModulos * estrutPorPlaca 
+    const custoEstrutSolo = nModulos > 0 && estrutPorPlaca > 0
+      ? nModulos * estrutPorPlaca
       : 0;
 
     // 4. Valor financiado
@@ -229,7 +229,7 @@ export default function CalculadoraManual() {
       economia_mensal: null,
       economia_percentual: null,
       payback_meses: null,
-      status: "pendente"
+      status: "Rascunho"
     });
 
     toast.success("Orçamento salvo com sucesso!");

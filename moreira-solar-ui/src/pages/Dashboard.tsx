@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,106 +7,209 @@ import { useOrcamentos } from "@/hooks/useOrcamentos";
 import { usePropostas } from "@/hooks/usePropostas";
 import { useProjetos } from "@/hooks/useProjetos";
 import { TrendingUp, Users, FileText, DollarSign, Zap, CheckCircle } from "lucide-react";
+import { Area, AreaChart, Pie, PieChart, ResponsiveContainer, Cell, Tooltip, Legend } from "recharts";
 
+// ----------------------- utils de data e segurança -----------------------
+const msPerDay = 24 * 60 * 60 * 1000;
+const safeDate = (d: any) => {
+  const dt = d ? new Date(d) : null;
+  return isNaN(dt as any) ? null : dt;
+};
+const between = (d: Date, start: Date, end: Date) => d >= start && d <= end;
+
+const asNumber = (n: any, fallback = 0) => (typeof n === "number" && isFinite(n) ? n : fallback);
+const get = <T, K extends keyof T>(obj: T | undefined | null, key: K, fallback: any = undefined) =>
+  obj && key in obj ? (obj as any)[key] : fallback;
+
+// ----------------------- componente -----------------------
 export default function Dashboard() {
-  const { leads, isLoading: isLoadingLeads } = useLeads();
-  const { orcamentos, isLoading: isLoadingOrcamentos } = useOrcamentos();
-  const { propostas, isLoading: isLoadingPropostas } = usePropostas();
-  const { projetos, isLoading: isLoadingProjetos } = useProjetos();
+  const { leads = [] } = useLeads();
+  const { orcamentos = [] } = useOrcamentos();
+  const { propostas = [] } = usePropostas();
+  const { projetos = [] } = useProjetos();
 
-  const [period, setPeriod] = useState("30d");
-  const [loading, setLoading] = useState(false);
-
-  const handlePeriodChange = (value: string) => {
-    setLoading(true);
+  const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "ytd">("30d");
+  const [loadingUI, setLoadingUI] = useState(false);
+  const handlePeriodChange = (value: "7d" | "30d" | "90d" | "ytd") => {
+    setLoadingUI(true);
     setPeriod(value);
-    setTimeout(() => setLoading(false), 400);
+    setTimeout(() => setLoadingUI(false), 350);
   };
 
-  const isAnyLoading = isLoadingLeads || isLoadingOrcamentos || isLoadingPropostas || isLoadingProjetos;
+  // ----------------------- janelas de tempo -----------------------
+  const now = new Date();
+  const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : 365;
+  const startCurrent = new Date(now.getTime() - days * msPerDay);
+  const startPrevious = new Date(startCurrent.getTime() - days * msPerDay);
 
-  // Calculate funilComercial based on lead statuses
-  const funilComercial = useMemo(() => {
-    const novoLeads = leads.filter(l => l.status === "Novo").length;
-    const qualificadoLeads = leads.filter(l => l.status === "Qualificado").length;
-    const orcamentosEnviados = orcamentos.filter(o => o.status === "Enviado").length;
-    const propostasEmNegociacao = propostas.filter(p => p.status === "Em Negociação" || p.status === "Enviada").length;
-    const propostasAceitas = propostas.filter(p => p.status === "Aprovada" || p.status === "Aceita").length;
+  // Filtragem segura por data
+  const filterByDate = <T extends Record<string, any>>(rows: T[], field = "created_at") => {
+    const cur: T[] = [];
+    const prev: T[] = [];
+    for (const r of rows) {
+      const dt = safeDate(get(r, field));
+      if (!dt) continue;
+      if (between(dt, startCurrent, now)) cur.push(r);
+      else if (between(dt, startPrevious, startCurrent)) prev.push(r);
+    }
+    return { current: cur, previous: prev };
+  };
 
-    const total = Math.max(novoLeads + qualificadoLeads, 1);
+  const leadsP = useMemo(() => filterByDate(leads, "created_at"), [leads, period]);
+  const orcsP = useMemo(() => filterByDate(orcamentos, "created_at"), [orcamentos, period]);
+  const propsP = useMemo(() => filterByDate(propostas, "created_at"), [propostas, period]);
+  const projsP = useMemo(() => filterByDate(projetos, "created_at"), [projetos, period]);
 
-    return [
-      { stage: "Novo", count: novoLeads, percentage: 100 },
-      { stage: "Qualificado", count: qualificadoLeads, percentage: Math.round((qualificadoLeads / total) * 100) },
-      { stage: "Orçamento Enviado", count: orcamentosEnviados, percentage: Math.round((orcamentosEnviados / total) * 100) },
-      { stage: "Negociação", count: propostasEmNegociacao, percentage: Math.round((propostasEmNegociacao / total) * 100) },
-      { stage: "Ganhou", count: propostasAceitas, percentage: Math.round((propostasAceitas / total) * 100) },
-    ];
-  }, [leads, orcamentos, propostas]);
+  // variação %
+  const pct = (cur: number, prev: number) => {
+    if (!isFinite(prev) || !prev) return cur ? "+100%" : "0%";
+    const d = ((cur - prev) / prev) * 100;
+    const v = d.toFixed(1).replace("-0.0", "0.0");
+    return `${d > 0 ? "+" : ""}${v}%`;
+  };
 
-  // Calculate pipelineObra based on project statuses
-  const pipelineObra = useMemo(() => {
-    const statusCount = {
-      "Vistoria": 0,
-      "Projeto/ART": 0,
-      "Homologação": 0,
-      "Compra": 0,
-      "Instalação": 0,
-      "Comissionamento": 0,
-      "Entrega": 0,
-    };
+  // ----------------------- cálculos KPIs -----------------------
+  const leadsCur = leadsP.current.length;
+  const leadsPrev = leadsP.previous.length;
 
-    projetos.forEach(projeto => {
-      if (projeto.status && statusCount.hasOwnProperty(projeto.status)) {
-        statusCount[projeto.status as keyof typeof statusCount]++;
-      }
-    });
+  const orcAbertosCur = orcsP.current.filter(o => ["Enviado", "Rascunho"].includes(String(get(o, "status", "")))).length;
+  const orcAbertosPrev = orcsP.previous.filter(o => ["Enviado", "Rascunho"].includes(String(get(o, "status", "")))).length;
 
-    return Object.entries(statusCount).map(([stage, count]) => ({ stage, count }));
-  }, [projetos]);
+  const propsAprovCur = propsP.current.filter(p => ["Aprovada", "Aceita"].includes(String(get(p, "status", ""))));
+  const propsAprovPrev = propsP.previous.filter(p => ["Aprovada", "Aceita"].includes(String(get(p, "status", ""))));
 
-  // Calculate KPIs
-  const orcamentosAbertos = orcamentos.filter(o => o.status === "Enviado" || o.status === "Rascunho").length;
-  const totalLeadsConvertidos = propostas.filter(p => p.status === "Aprovada" || p.status === "Aceita").length;
-  const taxaConversao = leads.length > 0 ? Math.round((totalLeadsConvertidos / leads.length) * 100) : 0;
+  const taxaCur = leadsCur ? Math.round((propsAprovCur.length / leadsCur) * 100) : 0;
+  const taxaPrev = leadsPrev ? Math.round((propsAprovPrev.length / leadsPrev) * 100) : 0;
 
-  const valorTotalPropostas = propostas
-    .filter(p => p.status === "Aprovada" || p.status === "Aceita")
-    .reduce((sum, p) => sum + (p.valor_total || 0), 0);
-  const ticketMedio = totalLeadsConvertidos > 0 ? valorTotalPropostas / totalLeadsConvertidos : 0;
+  const ticketCur =
+    propsAprovCur.length > 0
+      ? propsAprovCur.reduce((s, p) => s + asNumber(get(p, "valor_total"), 0), 0) / propsAprovCur.length
+      : 0;
+  const ticketPrev =
+    propsAprovPrev.length > 0
+      ? propsAprovPrev.reduce((s, p) => s + asNumber(get(p, "valor_total"), 0), 0) / propsAprovPrev.length
+      : 0;
 
-  const receitaProjetada = propostas
-    .filter(p => p.status === "Enviada" || p.status === "Em Negociação")
-    .reduce((sum, p) => sum + (p.valor_total || 0), 0);
+  const receitaCur = propsP.current
+    .filter(p => ["Enviada", "Em Negociação"].includes(String(get(p, "status", ""))))
+    .reduce((s, p) => s + asNumber(get(p, "valor_total"), 0), 0);
+  const receitaPrev = propsP.previous
+    .filter(p => ["Enviada", "Em Negociação"].includes(String(get(p, "status", ""))))
+    .reduce((s, p) => s + asNumber(get(p, "valor_total"), 0), 0);
 
-  const kwpInstalados = projetos
-    .filter(p => p.status === "Entrega" || p.status === "Comissionamento")
-    .reduce((sum, p) => {
-      // Assuming we can get kWp from orcamentos linked to projetos
-      const orcamento = orcamentos.find(o => o.cliente_id === p.cliente_id);
-      return sum + ((orcamento?.qtd_modulos || 0) * (orcamento?.potencia_modulo_w || 0) / 1000);
-    }, 0);
+  // kWp por projeto vem do orçamento atrelado ao mesmo cliente (fallback seguro)
+  const kwpFromOrc = (clienteId: any) => {
+    const orc = orcamentos.find(o => get(o, "cliente_id") === clienteId);
+    const qtd = asNumber(get(orc, "qtd_modulos"), 0);
+    const potW = asNumber(get(orc, "potencia_modulo_w"), 0);
+    return (qtd * potW) / 1000;
+  };
 
+  const kwpCur = projsP.current
+    .filter(p => ["Entrega", "Comissionamento"].includes(String(get(p, "status", ""))))
+    .reduce((s, p) => s + kwpFromOrc(get(p, "cliente_id")), 0);
+
+  const kwpPrev = projsP.previous
+    .filter(p => ["Entrega", "Comissionamento"].includes(String(get(p, "status", ""))))
+    .reduce((s, p) => s + kwpFromOrc(get(p, "cliente_id")), 0);
+
+  // KPIs
   const kpis = [
-    { title: "Novos Leads", value: leads.length, icon: Users, change: "+12%" },
-    { title: "Orçamentos em Aberto", value: orcamentosAbertos, icon: FileText, change: "+5%" },
-    { title: "Taxa de Conversão", value: `${taxaConversao}%`, icon: TrendingUp, change: "+3%" },
-    { title: "Ticket Médio", value: `R$ ${ticketMedio.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, icon: DollarSign, change: "+8%" },
-    { title: "Receita Projetada", value: `R$ ${receitaProjetada.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, icon: DollarSign, change: "+15%" },
-    { title: "kWp Instalados", value: `${kwpInstalados.toFixed(1)} kWp`, icon: Zap, change: "+20%" },
+    { title: "Novos Leads", value: leadsCur, icon: Users, change: pct(leadsCur, leadsPrev) },
+    { title: "Orçamentos em Aberto", value: orcAbertosCur, icon: FileText, change: pct(orcAbertosCur, orcAbertosPrev) },
+    { title: "Taxa de Conversão", value: `${taxaCur}%`, icon: TrendingUp, change: pct(taxaCur, taxaPrev) },
+    {
+      title: "Ticket Médio",
+      value: `R$ ${ticketCur.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`,
+      icon: DollarSign,
+      change: pct(ticketCur, ticketPrev),
+    },
+    {
+      title: "Receita Projetada",
+      value: `R$ ${receitaCur.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`,
+      icon: DollarSign,
+      change: pct(receitaCur, receitaPrev),
+    },
+    { title: "kWp Instalados", value: `${kwpCur.toFixed(1)} kWp`, icon: Zap, change: pct(kwpCur, kwpPrev) },
   ];
 
-  const insights = [
-    "Ciclo médio de vendas: 18 dias (melhor que mês anterior)",
-    "Fonte com melhor conversão: Indicação (45%)",
-    "Pico de novos leads: terça-feira às 14h",
+  // ----------------------- gráficos dinâmicos -----------------------
+  // sparkline usa série fictícia derivada de valores atuais (sem depender de histórico)
+  const spark = (base: number) => [
+    { value: base * 0.85 + 1 },
+    { value: base * 0.9 + 2 },
+    { value: base * 0.95 + 1 },
+    { value: base * 1.0 + 3 },
+    { value: base * 0.98 + 2 },
+    { value: base * 1.05 + 4 },
+    { value: base * 1.08 + 3 },
   ];
 
+  // donut de conversão
+  const conversionData = [
+    { name: "Leads", value: leadsCur },
+    { name: "Propostas", value: propsP.current.length },
+    { name: "Projetos", value: projsP.current.length },
+  ];
+  const COLORS = ["#3b82f6", "#22c55e", "#f59e0b"];
+
+  // kWp por mês (dinâmico, com base em created_at dos projetos finalizados)
+  const kwpMensal = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of projetos) {
+      const status = String(get(p, "status", ""));
+      if (!["Entrega", "Comissionamento"].includes(status)) continue;
+      const dt = safeDate(get(p, "created_at"));
+      if (!dt) continue;
+      const label = dt.toLocaleString("pt-BR", { month: "short" });
+      map.set(label, (map.get(label) || 0) + kwpFromOrc(get(p, "cliente_id")));
+    }
+    return Array.from(map.entries()).map(([mes, kwp]) => ({ mes, kwp: Number(kwp.toFixed(2)) }));
+  }, [projetos, orcamentos]);
+
+  // ----------------------- insights dinâmicos -----------------------
+  const insights = useMemo(() => {
+    const out: string[] = [];
+    // leads
+    out.push(
+      leadsCur >= leadsPrev
+        ? `🚀 Geração de leads aumentou ${pct(leadsCur, leadsPrev)} frente ao período anterior.`
+        : `📉 Geração de leads caiu ${pct(leadsCur, leadsPrev)} frente ao período anterior.`
+    );
+    // taxa
+    if (taxaCur !== taxaPrev) {
+      out.push(
+        taxaCur > taxaPrev
+          ? `📈 A taxa de conversão melhorou (${taxaCur}% → ${taxaPrev}%).`
+          : `⚠️ A taxa de conversão reduziu (${taxaPrev}% → ${taxaCur}%).`
+      );
+    } else {
+      out.push(`ℹ️ A taxa de conversão manteve-se em ${taxaCur}%.`);
+    }
+    // ticket
+    out.push(
+      ticketCur >= ticketPrev
+        ? `💰 Ticket médio subiu para R$ ${ticketCur.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}.`
+        : `💸 Ticket médio caiu para R$ ${ticketCur.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}.`
+    );
+    // kwp
+    out.push(
+      kwpCur > 0
+        ? kwpCur >= kwpPrev
+          ? `⚡ Potência instalada cresceu ${pct(kwpCur, kwpPrev)}.`
+          : `🔋 Potência instalada reduziu ${pct(kwpCur, kwpPrev)}.`
+        : `🛠️ Nenhuma instalação concluída neste período.`
+    );
+    return out;
+  }, [leadsCur, leadsPrev, taxaCur, taxaPrev, ticketCur, ticketPrev, kwpCur, kwpPrev]);
+
+  // ----------------------- render -----------------------
   return (
     <div className="space-y-6">
+      {/* header + seletor */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Dashboard</h1>
-        <Select value={period} onValueChange={handlePeriodChange}>
+        <Select value={period} onValueChange={v => handlePeriodChange(v as any)}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Período" />
           </SelectTrigger>
@@ -114,28 +217,53 @@ export default function Dashboard() {
             <SelectItem value="7d">Últimos 7 dias</SelectItem>
             <SelectItem value="30d">Últimos 30 dias</SelectItem>
             <SelectItem value="90d">Últimos 90 dias</SelectItem>
-            <SelectItem value="ytd">Year to Date</SelectItem>
+            <SelectItem value="ytd">Ano até agora</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {/* KPIs */}
+      {/* KPIs com sparkline */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {kpis.map((kpi) => (
+        {kpis.map(kpi => (
           <Card key={kpi.title}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">{kpi.title}</CardTitle>
               <kpi.icon className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {loading || isAnyLoading ? (
+              {loadingUI ? (
                 <Skeleton className="h-8 w-24" />
               ) : (
                 <>
                   <div className="text-2xl font-bold">{kpi.value}</div>
-                  <p className="text-xs text-muted-foreground">
-                    <span className="text-success">{kpi.change}</span> vs. período anterior
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <span
+                      className={
+                        kpi.change.startsWith("+")
+                          ? "text-success"
+                          : kpi.change.startsWith("-")
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                      }
+                    >
+                      {kpi.change}
+                    </span>{" "}
+                    vs. período anterior
                   </p>
+
+                  <div className="h-[50px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={spark(Number(String(kpi.value).replace(/[^\d.]/g, "")) || 0)}>
+                        <defs>
+                          <linearGradient id="colorTrend" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#16a34a" stopOpacity={0.6} />
+                            <stop offset="95%" stopColor="#16a34a" stopOpacity={0.05} />
+                          </linearGradient>
+                        </defs>
+                        <Area type="monotone" dataKey="value" stroke="#16a34a" strokeWidth={2} fill="url(#colorTrend)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
                 </>
               )}
             </CardContent>
@@ -143,80 +271,64 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Funil Comercial */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Funil Comercial</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading || isAnyLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {funilComercial.map((stage) => (
-                <div key={stage.stage} className="flex items-center gap-4">
-                  <div className="w-32 text-sm font-medium">{stage.stage}</div>
-                  <div className="flex-1 relative h-10 bg-muted rounded overflow-hidden">
-                    <div
-                      className="absolute inset-y-0 left-0 bg-primary flex items-center px-3 text-primary-foreground text-sm font-medium transition-all"
-                      style={{ width: `${stage.percentage}%` }}
-                    >
-                      {stage.count}
-                    </div>
-                  </div>
-                  <div className="w-12 text-sm text-muted-foreground text-right">{stage.percentage}%</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* gráficos analíticos */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* conversão comercial (donut) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Conversão Comercial</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={conversionData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100} paddingAngle={3}>
+                  {conversionData.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
 
-      {/* Pipeline da Obra */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Pipeline da Obra</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading || isAnyLoading ? (
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                <Skeleton key={i} className="h-24 flex-1" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-7 gap-2">
-              {pipelineObra.map((stage) => (
-                <div key={stage.stage} className="flex flex-col items-center gap-2">
-                  <div className="w-full aspect-square bg-card border-2 border-border rounded-lg flex items-center justify-center">
-                    <span className="text-2xl font-bold">{stage.count}</span>
-                  </div>
-                  <p className="text-xs text-center text-muted-foreground">{stage.stage}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {/* kwp por mês */}
+        <Card>
+          <CardHeader>
+            <CardTitle>kWp Instalados por Mês</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={kwpMensal}>
+                <defs>
+                  <linearGradient id="kwpColor" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.6} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+                <Area type="monotone" dataKey="kwp" stroke="#3b82f6" strokeWidth={2} fill="url(#kwpColor)" />
+                <Tooltip />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Insights */}
+      {/* insights */}
       <Card>
         <CardHeader>
-          <CardTitle>Insights</CardTitle>
+          <CardTitle>Insights do Período</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {insights.map((insight, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <CheckCircle className="h-5 w-5 text-success mt-0.5" />
-                <p className="text-sm">{insight}</p>
-              </div>
+          <ul className="space-y-2">
+            {insights.map((text, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <CheckCircle className="text-success h-4 w-4" />
+                <span className="text-sm">{text}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </CardContent>
       </Card>
     </div>

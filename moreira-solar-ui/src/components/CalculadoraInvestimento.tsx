@@ -28,7 +28,7 @@ export default function CalculadoraInvestimento() {
   const [clienteSelecionado, setClienteSelecionado] = useState("");
   const [estruturaSolo, setEstruturaSolo] = useState(false);
   const [clienteDialogOpen, setClienteDialogOpen] = useState(false);
-  
+
   const [resultado, setResultado] = useState<SimulacaoResult | null>(null);
   const [calculosInvestimento, setCalculosInvestimento] = useState<{
     investimentoTotal: number;
@@ -89,7 +89,7 @@ export default function CalculadoraInvestimento() {
     const geracaoMensal = simulacao.geracaoReal;
     const tarifaBase = tarifaCustom ? parseFloat(tarifaCustom) : parametros?.tarifaComercial || 1.1;
     const tarifaVendaGC = tarifaBase * (1 - (parametros?.descontoVendaGC || 0.20));
-    
+
     const receitaMensal = geracaoMensal * taxaCompraNum;
     const receitaAnual = receitaMensal * 12;
 
@@ -110,7 +110,7 @@ export default function CalculadoraInvestimento() {
       });
       taxaAjustada *= (1 + reajusteMedio);
     }
-    
+
     const roi = ((receitaTotal - investimentoTotal) / investimentoTotal) * 100;
     const payback = investimentoTotal / receitaAnual;
     const economiaClienteGC = geracaoMensal * (tarifaBase - tarifaVendaGC);
@@ -160,7 +160,7 @@ export default function CalculadoraInvestimento() {
       economia_mensal: calculosInvestimento.receitaMensal || 0,
       economia_percentual: null,
       payback_meses: calculosInvestimento.payback ? Math.round(calculosInvestimento.payback * 12) : null,
-      status: "pendente"
+      status: "Rascunho"
     });
 
     toast.success("Orçamento de Investimento salvo com sucesso!");

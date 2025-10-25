@@ -66,7 +66,7 @@ export default function Orcamentos() {
     economia_mensal: null,
     economia_percentual: null,
     payback_meses: null,
-    status: "pendente",
+    status: "Rascunho",
     vendedor_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
@@ -102,7 +102,7 @@ export default function Orcamentos() {
         economia_mensal: null,
         economia_percentual: null,
         payback_meses: null,
-        status: "pendente",
+        status: "Rascunho",
         vendedor_id: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -200,15 +200,20 @@ export default function Orcamentos() {
 
   const handleAprovarOrcamento = (orc: Orcamento) => {
     updateOrcamento({ id: orc.id, status: "Aprovado" });
-    
+    const now = new Date();
+    const numeroProjeto = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+
+
     addProjeto({
-      cliente: orc.cliente_nome || "",
-      orcamentoNumero: orc.numero,
+      cliente_nome: orc.cliente_nome || "",
+      nome: orc.cliente_nome,
+      numero: numeroProjeto,
+      orcamento_id: orc.id,
       kwp: ((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000,
-      responsavel: "Eng. Roberto",
+      responsavel_id: null,
       status: "Vistoria",
-      proximosPassos: "Realizar vistoria técnica no local",
-      prazo: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      proximos_passos: "Realizar vistoria técnica no local",
+      data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       prioridade: "Média",
       progresso: 0,
       checklist: [
@@ -225,15 +230,15 @@ export default function Orcamentos() {
         itens: [],
       },
       timeline: [
-        { 
-          id: `t-${Date.now()}`, 
-          data: new Date().toISOString(), 
-          titulo: "Projeto Iniciado", 
-          descricao: "Orçamento aprovado e projeto criado" 
+        {
+          id: `t-${Date.now()}`,
+          data: new Date().toISOString(),
+          titulo: "Projeto Iniciado",
+          descricao: "Orçamento aprovado e projeto criado"
         },
       ],
     });
-    
+
     toast.success("Orçamento aprovado e projeto criado!");
     setPanelOpen(false);
   };
@@ -251,9 +256,9 @@ export default function Orcamentos() {
           subtitle: orc.cliente_nome || "",
           badges: [
             { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
-            { 
-              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido", 
-              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary" 
+            {
+              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido",
+              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary"
             },
           ],
           metadata: {
@@ -275,9 +280,9 @@ export default function Orcamentos() {
           subtitle: orc.cliente_nome || "",
           badges: [
             { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
-            { 
-              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido", 
-              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary" 
+            {
+              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido",
+              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary"
             },
           ],
           metadata: {
@@ -344,202 +349,202 @@ export default function Orcamentos() {
                 Novo Orçamento
               </Button>
             </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingOrc ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit}>
-              <Tabs defaultValue="cliente">
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="cliente">Cliente/Site</TabsTrigger>
-                  <TabsTrigger value="dimensionamento">Dimensionamento</TabsTrigger>
-                  <TabsTrigger value="precificacao">Precificação</TabsTrigger>
-                  <TabsTrigger value="simulacao">Simulação</TabsTrigger>
-                </TabsList>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingOrc ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit}>
+                <Tabs defaultValue="cliente">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="cliente">Cliente/Site</TabsTrigger>
+                    <TabsTrigger value="dimensionamento">Dimensionamento</TabsTrigger>
+                    <TabsTrigger value="precificacao">Precificação</TabsTrigger>
+                    <TabsTrigger value="simulacao">Simulação</TabsTrigger>
+                  </TabsList>
 
-                <TabsContent value="cliente" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Cliente *</Label>
-                      <Input value={formData.cliente_nome || ""} onChange={(e) => setFormData({ ...formData, cliente_nome: e.target.value })} required />
+                  <TabsContent value="cliente" className="space-y-4 mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Cliente *</Label>
+                        <Input value={formData.cliente_nome || ""} onChange={(e) => setFormData({ ...formData, cliente_nome: e.target.value })} required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Tipo de Telhado</Label>
+                        <Select value={formData.tipoTelhado} onValueChange={(v) => setFormData({ ...formData, tipoTelhado: v })}>
+                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Cerâmico">Cerâmico</SelectItem>
+                            <SelectItem value="Metálico">Metálico</SelectItem>
+                            <SelectItem value="Fibrocimento">Fibrocimento</SelectItem>
+                            <SelectItem value="Laje">Laje</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Fase</Label>
+                        <Select value={formData.fase} onValueChange={(v) => setFormData({ ...formData, fase: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Monofásico">Monofásico</SelectItem>
+                            <SelectItem value="Bifásico">Bifásico</SelectItem>
+                            <SelectItem value="Trifásico">Trifásico</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Dono</Label>
+                        <Select value={formData.dono} onValueChange={(v) => setFormData({ ...formData, dono: v })}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Carlos Vendedor">Carlos Vendedor</SelectItem>
+                            <SelectItem value="Ana Comercial">Ana Comercial</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>Tipo de Telhado</Label>
-                      <Select value={formData.tipoTelhado} onValueChange={(v) => setFormData({ ...formData, tipoTelhado: v })}>
-                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Cerâmico">Cerâmico</SelectItem>
-                          <SelectItem value="Metálico">Metálico</SelectItem>
-                          <SelectItem value="Fibrocimento">Fibrocimento</SelectItem>
-                          <SelectItem value="Laje">Laje</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label>Observações</Label>
+                      <Input value={formData.observacoes} onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })} />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Fase</Label>
-                      <Select value={formData.fase} onValueChange={(v) => setFormData({ ...formData, fase: v })}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Monofásico">Monofásico</SelectItem>
-                          <SelectItem value="Bifásico">Bifásico</SelectItem>
-                          <SelectItem value="Trifásico">Trifásico</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Dono</Label>
-                      <Select value={formData.dono} onValueChange={(v) => setFormData({ ...formData, dono: v })}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Carlos Vendedor">Carlos Vendedor</SelectItem>
-                          <SelectItem value="Ana Comercial">Ana Comercial</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Observações</Label>
-                    <Input value={formData.observacoes} onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })} />
-                  </div>
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="dimensionamento" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Conta (R$)</Label>
-                      <Input
-                        type="number"
-                        value={formData.geracao_kwh || ""}
-                        onChange={(e) => setFormData({ ...formData, conta: parseFloat(e.target.value) || undefined })}
+                  <TabsContent value="dimensionamento" className="space-y-4 mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Conta (R$)</Label>
+                        <Input
+                          type="number"
+                          value={formData.geracao_kwh || ""}
+                          onChange={(e) => setFormData({ ...formData, conta: parseFloat(e.target.value) || undefined })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Consumo (kWh/mês)</Label>
+                        <Input
+                          type="number"
+                          value={formData.consumo || ""}
+                          onChange={(e) => setFormData({ ...formData, consumo: parseFloat(e.target.value) || undefined })}
+                        />
+                      </div>
+                    </div>
+                    <Button type="button" variant="secondary" onClick={calcularDimensionamento}>Calcular Dimensionamento</Button>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>kWp Recomendado</Label>
+                        <Input type="number" value={formData.kwp} onChange={(e) => setFormData({ ...formData, kwp: parseFloat(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Qtd de Placas</Label>
+                        <Input type="number" value={formData.qtd_modulos || 0} onChange={(e) => setFormData({ ...formData, qtd_modulos: parseInt(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Modelo de Placa</Label>
+                        <Select value={formData.modelo_modulo || ""} onValueChange={(v) => setFormData({ ...formData, modelo_modulo: v })}>
+                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                          <SelectContent>
+                            {catalogoPlacas.map((p) => (
+                              <SelectItem key={p.id} value={p.nome}>{p.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Inversor</Label>
+                        <Select value={formData.inversor} onValueChange={(v) => setFormData({ ...formData, inversor: v })}>
+                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                          <SelectContent>
+                            {catalogoInversores.map((inv) => (
+                              <SelectItem key={inv.id} value={inv.nome}>{inv.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="estruturaSolo"
+                        checked={formData.estruturaSolo}
+                        onCheckedChange={(checked) => setFormData({ ...formData, estruturaSolo: !!checked })}
                       />
+                      <Label htmlFor="estruturaSolo" className="cursor-pointer">
+                        Estrutura de solo (adiciona R$ {parametros.adicionalEstrutSoloPorPlaca.toFixed(2)} por placa)
+                      </Label>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Consumo (kWh/mês)</Label>
-                      <Input
-                        type="number"
-                        value={formData.consumo || ""}
-                        onChange={(e) => setFormData({ ...formData, consumo: parseFloat(e.target.value) || undefined })}
-                      />
-                    </div>
-                  </div>
-                  <Button type="button" variant="secondary" onClick={calcularDimensionamento}>Calcular Dimensionamento</Button>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>kWp Recomendado</Label>
-                      <Input type="number" value={formData.kwp} onChange={(e) => setFormData({ ...formData, kwp: parseFloat(e.target.value) || 0 })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Qtd de Placas</Label>
-                      <Input type="number" value={formData.qtd_modulos || 0} onChange={(e) => setFormData({ ...formData, qtd_modulos: parseInt(e.target.value) || 0 })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Modelo de Placa</Label>
-                      <Select value={formData.modelo_modulo || ""} onValueChange={(v) => setFormData({ ...formData, modelo_modulo: v })}>
-                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                        <SelectContent>
-                          {catalogoPlacas.map((p) => (
-                            <SelectItem key={p.id} value={p.nome}>{p.nome}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Inversor</Label>
-                      <Select value={formData.inversor} onValueChange={(v) => setFormData({ ...formData, inversor: v })}>
-                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                        <SelectContent>
-                          {catalogoInversores.map((inv) => (
-                            <SelectItem key={inv.id} value={inv.nome}>{inv.nome}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="estruturaSolo"
-                      checked={formData.estruturaSolo}
-                      onCheckedChange={(checked) => setFormData({ ...formData, estruturaSolo: !!checked })}
-                    />
-                    <Label htmlFor="estruturaSolo" className="cursor-pointer">
-                      Estrutura de solo (adiciona R$ {parametros.adicionalEstrutSoloPorPlaca.toFixed(2)} por placa)
-                    </Label>
-                  </div>
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="precificacao" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Preço Base (R$)</Label>
-                      <Input type="number" value={formData.precoBase} onChange={(e) => setFormData({ ...formData, precoBase: parseFloat(e.target.value) || 0 })} />
+                  <TabsContent value="precificacao" className="space-y-4 mt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Preço Base (R$)</Label>
+                        <Input type="number" value={formData.precoBase} onChange={(e) => setFormData({ ...formData, precoBase: parseFloat(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Mão de Obra (R$)</Label>
+                        <Input type="number" value={formData.maoDeObra} onChange={(e) => setFormData({ ...formData, maoDeObra: parseFloat(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Frete (R$)</Label>
+                        <Input type="number" value={formData.frete} onChange={(e) => setFormData({ ...formData, frete: parseFloat(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Adicionais (R$)</Label>
+                        <Input type="number" value={formData.custo_estrutura_solo || 0} onChange={(e) => setFormData({ ...formData, custo_estrutura_solo: parseFloat(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Desconto (R$)</Label>
+                        <Input type="number" value={formData.desconto} onChange={(e) => setFormData({ ...formData, desconto: parseFloat(e.target.value) || 0 })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Markup</Label>
+                        <Input type="number" step="0.01" value={formData.markup} onChange={(e) => setFormData({ ...formData, markup: parseFloat(e.target.value) || 1 })} />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Mão de Obra (R$)</Label>
-                      <Input type="number" value={formData.maoDeObra} onChange={(e) => setFormData({ ...formData, maoDeObra: parseFloat(e.target.value) || 0 })} />
+                    <Button type="button" variant="secondary" onClick={recalcularTotal}>Recalcular Total</Button>
+                    <div className="p-4 bg-card border rounded-lg">
+                      <p className="text-sm text-muted-foreground">Total do Orçamento</p>
+                      <p className="text-3xl font-bold">R$ {(formData.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Frete (R$)</Label>
-                      <Input type="number" value={formData.frete} onChange={(e) => setFormData({ ...formData, frete: parseFloat(e.target.value) || 0 })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Adicionais (R$)</Label>
-                      <Input type="number" value={formData.custo_estrutura_solo || 0} onChange={(e) => setFormData({ ...formData, custo_estrutura_solo: parseFloat(e.target.value) || 0 })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Desconto (R$)</Label>
-                      <Input type="number" value={formData.desconto} onChange={(e) => setFormData({ ...formData, desconto: parseFloat(e.target.value) || 0 })} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Markup</Label>
-                      <Input type="number" step="0.01" value={formData.markup} onChange={(e) => setFormData({ ...formData, markup: parseFloat(e.target.value) || 1 })} />
-                    </div>
-                  </div>
-                  <Button type="button" variant="secondary" onClick={recalcularTotal}>Recalcular Total</Button>
-                  <div className="p-4 bg-card border rounded-lg">
-                    <p className="text-sm text-muted-foreground">Total do Orçamento</p>
-                    <p className="text-3xl font-bold">R$ {(formData.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                  </div>
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="simulacao" className="space-y-4 mt-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Label>Taxa de Juros Mensal: {(parametros.taxaJurosMes * 100).toFixed(2)}%</Label>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm">
-                            <p className="font-mono text-xs">Fórmula: PV = PMT × (1 - (1+i)^-n) / i</p>
-                            <p className="text-xs mt-1">onde i = taxa mensal, n = prazo</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    {parametros.prazos.map((prazo) => {
-                      const { pmt, pv } = calcularSimulacao(prazo);
-                      return (
-                        <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
-                          <div>
-                            <p className="font-medium">{prazo}x</p>
-                            <p className="text-sm text-muted-foreground">Valor Presente: R$ {pv.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                  <TabsContent value="simulacao" className="space-y-4 mt-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Label>Taxa de Juros Mensal: {(parametros.taxaJurosMes * 100).toFixed(2)}%</Label>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-sm">
+                              <p className="font-mono text-xs">Fórmula: PV = PMT × (1 - (1+i)^-n) / i</p>
+                              <p className="text-xs mt-1">onde i = taxa mensal, n = prazo</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      {parametros.prazos.map((prazo) => {
+                        const { pmt, pv } = calcularSimulacao(prazo);
+                        return (
+                          <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
+                            <div>
+                              <p className="font-medium">{prazo}x</p>
+                              <p className="text-sm text-muted-foreground">Valor Presente: R$ {pv.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <p className="text-xl font-bold">R$ {pmt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês</p>
                           </div>
-                          <p className="text-xl font-bold">R$ {pmt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </TabsContent>
-              </Tabs>
+                        );
+                      })}
+                    </div>
+                  </TabsContent>
+                </Tabs>
 
-              <DialogFooter className="mt-6">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                <Button type="submit">Salvar</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter className="mt-6">
+                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+                  <Button type="submit">Salvar</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -555,47 +560,47 @@ export default function Orcamentos() {
           onCardClick={handleCardClick}
         />
       ) : (
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nº</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Sistema (kWp)</TableHead>
-              <TableHead>Placas</TableHead>
-              <TableHead>Estrutura Solo</TableHead>
-              <TableHead>Total (R$)</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Validade</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredOrcamentos.map((orc) => (
-              <TableRow key={orc.id}>
-                <TableCell className="font-medium">{orc.numero}</TableCell>
-                <TableCell>{orc.cliente_nome}</TableCell>
-                <TableCell>{(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp</TableCell>
-                <TableCell>{orc.qtd_modulos} un.</TableCell>
-                <TableCell>{orc.estrutura_solo ? "Sim" : "Não"}</TableCell>
-                <TableCell>R$ {orc.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</TableCell>
-                <TableCell>{getStatusBadge(orc.status)}</TableCell>
-                <TableCell>{orc.validade}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(orc)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(orc.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nº</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Sistema (kWp)</TableHead>
+                <TableHead>Placas</TableHead>
+                <TableHead>Estrutura Solo</TableHead>
+                <TableHead>Total (R$)</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Validade</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {filteredOrcamentos.map((orc) => (
+                <TableRow key={orc.id}>
+                  <TableCell className="font-medium">{orc.numero}</TableCell>
+                  <TableCell>{orc.cliente_nome}</TableCell>
+                  <TableCell>{(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp</TableCell>
+                  <TableCell>{orc.qtd_modulos} un.</TableCell>
+                  <TableCell>{orc.estrutura_solo ? "Sim" : "Não"}</TableCell>
+                  <TableCell>R$ {orc.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</TableCell>
+                  <TableCell>{getStatusBadge(orc.status)}</TableCell>
+                  <TableCell>{orc.validade}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(orc)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(orc.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {selectedOrcamento && (
@@ -678,7 +683,7 @@ export default function Orcamentos() {
                     const n = prazo;
                     const pv = selectedOrcamento.valor_total;
                     const pmt = (pv * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1);
-                    
+
                     return (
                       <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
                         <div>
@@ -701,24 +706,24 @@ export default function Orcamentos() {
               label: "Ações",
               content: (
                 <div className="space-y-4">
-                  <Button 
-                    className="w-full" 
+                  <Button
+                    className="w-full"
                     onClick={() => handleOpenDialog(selectedOrcamento)}
                   >
                     <Pencil className="h-4 w-4 mr-2" />
                     Editar Orçamento
                   </Button>
-                  
+
                   {selectedOrcamento.status !== "Aprovado" && (
-                    <Button 
-                      className="w-full" 
+                    <Button
+                      className="w-full"
                       variant="secondary"
                       onClick={() => handleAprovarOrcamento(selectedOrcamento)}
                     >
                       Aprovar Orçamento
                     </Button>
                   )}
-                  
+
                   <Button
                     className="w-full"
                     variant="outline"
@@ -729,7 +734,7 @@ export default function Orcamentos() {
                   >
                     Enviar via WhatsApp
                   </Button>
-                  
+
                   <Button
                     className="w-full"
                     variant="destructive"

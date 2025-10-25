@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useClientes } from "@/hooks/useClientes";
 import { Cliente } from "@/types/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,9 +11,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Plus, Search, Eye, Pencil, Grid3X3, List } from "lucide-react";
 import { ClienteDialog } from "@/components/ClienteDialog";
 import { ClienteDetailPanel } from "@/components/panels/ClienteDetailPanel";
+import { getVendedoresMap } from "@/hooks/useVendedor";
 
 export default function Clientes() {
-  const { clientes, isLoading } = useClientes();
+  const { clientes } = useClientes();
   const [view, setView] = useState<"lista" | "cards">("lista");
   const [searchTerm, setSearchTerm] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("todos");
@@ -21,24 +22,51 @@ export default function Clientes() {
   const [editingCliente, setEditingCliente] = useState<Cliente | null>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [vendedoresMap, setVendedoresMap] = useState<Record<string, string>>({});
 
-  // RLS do Supabase já controla quais clientes o usuário pode ver
+  // 🧠 Busca nomes dos vendedores apenas uma vez
+  useEffect(() => {
+    async function carregarVendedores() {
+      const map = await getVendedoresMap();
+      setVendedoresMap(map);
+    }
+    carregarVendedores();
+  }, []);
+
+  // 🔎 Filtragem de clientes
   const clientesFiltrados = clientes.filter((cliente) => {
     const matchesSearch =
       cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       cliente.cpf_cnpj?.includes(searchTerm) ||
       cliente.telefone.includes(searchTerm);
+
+    const tipo =
+      cliente.tipo_pessoa ||
+      (cliente.cpf_cnpj && cliente.cpf_cnpj.replace(/\D/g, "").length <= 11
+        ? "PF"
+        : "PJ");
+
     const matchesTipo =
       tipoFiltro === "todos" ||
-      (tipoFiltro === "pf" && cliente.cpf_cnpj?.includes("-")) ||
-      (tipoFiltro === "pj" && cliente.cpf_cnpj?.includes("/"));
+      (tipoFiltro === "pf" && tipo === "PF") ||
+      (tipoFiltro === "pj" && tipo === "PJ");
+
     return matchesSearch && matchesTipo;
   });
 
+  // 📊 KPIs
   const kpis = {
     total: clientes.length,
-    pf: clientes.filter((c) => c.cpf_cnpj?.includes("-")).length,
-    pj: clientes.filter((c) => c.cpf_cnpj?.includes("/")).length,
+    pf: clientes.filter(
+      (c) =>
+        c.tipo_pessoa === "PF" ||
+        (!c.tipo_pessoa && c.cpf_cnpj && c.cpf_cnpj.replace(/\D/g, "").length <= 11)
+    ).length,
+    pj: clientes.filter(
+      (c) =>
+        c.tipo_pessoa === "PJ" ||
+        (!c.tipo_pessoa && c.cpf_cnpj && c.cpf_cnpj.replace(/\D/g, "").length > 11)
+    ).length,
   };
 
   const handleNew = () => {
@@ -56,21 +84,14 @@ export default function Clientes() {
     setPanelOpen(true);
   };
 
-  const getVendedorNome = (usuarioId?: string) => {
-    // TODO: Buscar nome do vendedor do Supabase
-    return "Vendedor";
-  };
-
-  const getInitials = (name: string) => {
-    return name
+  const getInitials = (name: string) =>
+    name
       .split(" ")
       .map((n) => n[0])
       .join("")
       .toUpperCase()
       .slice(0, 2);
-  };
 
-  // Por enquanto, todos usuários autenticados podem editar (RLS controla acesso)
   const podeEditar = true;
 
   return (
@@ -147,7 +168,7 @@ export default function Clientes() {
         </CardContent>
       </Card>
 
-      {/* Lista ou Cards */}
+      {/* Lista */}
       {view === "lista" ? (
         <Card>
           <CardContent className="p-0">
@@ -170,7 +191,9 @@ export default function Clientes() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarFallback className="text-xs">{getInitials(cliente.nome)}</AvatarFallback>
+                          <AvatarFallback className="text-xs">
+                            {getInitials(cliente.nome)}
+                          </AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{cliente.nome}</span>
                       </div>
@@ -179,10 +202,14 @@ export default function Clientes() {
                     <TableCell>{cliente.telefone}</TableCell>
                     <TableCell>{cliente.email || "-"}</TableCell>
                     <TableCell>
-                      {cliente.cidade && cliente.estado ? `${cliente.cidade}/${cliente.estado}` : "-"}
+                      {cliente.cidade && cliente.estado
+                        ? `${cliente.cidade}/${cliente.estado}`
+                        : "-"}
                     </TableCell>
-                    <TableCell>{getVendedorNome(cliente.vendedor_id)}</TableCell>
-                    <TableCell>{new Date(cliente.data_cadastro || Date.now()).toLocaleDateString("pt-BR")}</TableCell>
+                    <TableCell>{vendedoresMap[cliente.user_id] || "—"}</TableCell>
+                    <TableCell>
+                      {new Date(cliente.data_cadastro || Date.now()).toLocaleDateString("pt-BR")}
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleView(cliente)}>
@@ -202,6 +229,7 @@ export default function Clientes() {
           </CardContent>
         </Card>
       ) : (
+        // Cards
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {clientesFiltrados.map((cliente) => (
             <Card key={cliente.id} className="cursor-pointer hover:shadow-md transition-shadow">
@@ -214,7 +242,11 @@ export default function Clientes() {
                     <div>
                       <CardTitle className="text-base">{cliente.nome}</CardTitle>
                       <Badge variant="outline" className="mt-1">
-                        {cliente.cpf_cnpj?.includes("-") ? "PF" : "PJ"}
+                        {cliente.tipo_pessoa
+                          ? cliente.tipo_pessoa
+                          : cliente.cpf_cnpj && cliente.cpf_cnpj.replace(/\D/g, "").length <= 11
+                            ? "PF"
+                            : "PJ"}
                       </Badge>
                     </div>
                   </div>
@@ -225,7 +257,7 @@ export default function Clientes() {
                   <p className="text-muted-foreground">Telefone: {cliente.telefone}</p>
                   <p className="text-muted-foreground">Email: {cliente.email || "-"}</p>
                   <p className="text-muted-foreground">
-                    Vendedor: {getVendedorNome(cliente.vendedor_id)}
+                    Vendedor: {vendedoresMap[cliente.user_id] || "—"}
                   </p>
                 </div>
                 <div className="flex gap-2 pt-2">
@@ -251,7 +283,11 @@ export default function Clientes() {
         mode={editingCliente ? "edit" : "create"}
       />
 
-      <ClienteDetailPanel cliente={selectedCliente} open={panelOpen} onClose={() => setPanelOpen(false)} />
+      <ClienteDetailPanel
+        cliente={selectedCliente}
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+      />
     </div>
   );
 }

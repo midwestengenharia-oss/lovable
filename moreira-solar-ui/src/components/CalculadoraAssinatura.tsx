@@ -67,7 +67,7 @@ export default function CalculadoraAssinatura() {
     // 1. Obter tarifa comercial
     let tarifaComercial: number;
     const tarifaInformada = parseFloat(tarifaComercialInput);
-    
+
     if (tarifaInformada > 0) {
       tarifaComercial = tarifaInformada;
     } else {
@@ -81,8 +81,8 @@ export default function CalculadoraAssinatura() {
 
     // 2. Obter tarifa de venda (padrão: 80% da comercial = 20% desconto)
     const tarifaVendaInf = parseFloat(tarifaVendaInput);
-    const tarifaVenda = tarifaVendaInf > 0 
-      ? tarifaVendaInf 
+    const tarifaVenda = tarifaVendaInf > 0
+      ? tarifaVendaInf
       : tarifaComercial * 0.80;
 
     // 3. Determinar consumo mensal
@@ -95,8 +95,8 @@ export default function CalculadoraAssinatura() {
     const gastoMensalAssinatura = consumoMensal * tarifaVenda;
     const economiaMensal = gastoMensalAtual - gastoMensalAssinatura;
     const economiaAnual = economiaMensal * 12;
-    const percentualEconomia = gastoMensalAtual > 0 
-      ? ((gastoMensalAtual - gastoMensalAssinatura) / gastoMensalAtual) 
+    const percentualEconomia = gastoMensalAtual > 0
+      ? ((gastoMensalAtual - gastoMensalAssinatura) / gastoMensalAtual)
       : 0;
 
     // 5. Projeção 15 anos com reajuste
@@ -108,16 +108,16 @@ export default function CalculadoraAssinatura() {
     for (let i = 0; i < anos; i++) {
       const ano = i + 1;
       const fator = Math.pow(1 + reajuste, i);
-      
+
       const tarifaReajustada = tarifaComercial * fator;
       const vendaReajustada = tarifaVenda * fator;
-      
+
       const gastoAnualAtual = consumoMensal * 12 * tarifaReajustada;
       const gastoAnualAssinatura = consumoMensal * 12 * vendaReajustada;
       const economiaAno = gastoAnualAtual - gastoAnualAssinatura;
-      
+
       acumulado += economiaAno;
-      
+
       projecao.push({
         ano,
         tarifaReajustada,
@@ -179,7 +179,7 @@ export default function CalculadoraAssinatura() {
       economia_mensal: resultado.economiaMensal || 0,
       economia_percentual: resultado.economiaPercentual || 0,
       payback_meses: null,
-      status: "pendente"
+      status: "Rascunho"
     });
 
     toast.success("Orçamento de assinatura salvo!");
