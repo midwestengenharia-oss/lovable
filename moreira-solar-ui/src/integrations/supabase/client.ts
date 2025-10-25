@@ -12,11 +12,19 @@ export const getSupabase = (): SupabaseClient<Database> => {
   if (!supabaseSingleton) {
     supabaseSingleton = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: {
-        storage: localStorage,
+        // 🔁 Sessão dura enquanto o navegador estiver aberto
+        storage: sessionStorage,
         persistSession: true,
         autoRefreshToken: true,
       },
+      global: {
+        headers: {
+          "x-client-info": "moreira-solar-ui",
+        },
+      },
     });
+
+    console.info("[Supabase] Client inicializado com sessionStorage 🧠");
   }
   return supabaseSingleton;
 };

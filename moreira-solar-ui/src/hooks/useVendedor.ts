@@ -1,5 +1,5 @@
 // src/hooks/useVendedor.ts
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Retorna um mapa de vendedores no formato:

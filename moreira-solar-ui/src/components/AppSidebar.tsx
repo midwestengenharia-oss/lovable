@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Calculator,
@@ -13,6 +13,7 @@ import {
   Receipt,
   Users2,
   FileSpreadsheet,
+  LogOut,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,9 +27,11 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { useTheme } from "@/contexts/ThemeContext"; // 👈 Importa o tema
-import logoMoreiraLight from "@/assets/logo-moreira.png"; // logo para modo claro
-import logoMoreiraDark from "@/assets/logo-moreira-branco.png"; // logo para modo escuro
+import { useTheme } from "@/contexts/ThemeContext";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import logoMoreiraLight from "@/assets/logo-moreira.png";
+import logoMoreiraDark from "@/assets/logo-moreira-branco.png";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -47,14 +50,30 @@ const menuItems = [
 
 export function AppSidebar() {
   const { open } = useSidebar();
-  const { theme } = useTheme(); // 👈 acessa o tema atual
+  const { theme } = useTheme();
+  const navigate = useNavigate();
   const logo = theme === "dark" ? logoMoreiraDark : logoMoreiraLight;
 
+  // 🔒 Função de logout
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast.success("Sessão encerrada com sucesso!");
+      navigate("/login");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao encerrar sessão.");
+    }
+  };
+
   return (
-    <Sidebar collapsible="icon" className="border-r border-border bg-sidebar text-sidebar-foreground transition-colors">
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-border bg-sidebar text-sidebar-foreground transition-colors"
+    >
       <SidebarContent>
         <SidebarGroup>
-          {/* Cabeçalho do menu lateral */}
+          {/* Cabeçalho */}
           <SidebarGroupLabel className="text-lg font-bold flex items-center justify-center px-4 py-6">
             {open ? (
               <img
@@ -93,9 +112,10 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* Rodapé com link de perfil */}
+      {/* Rodapé com perfil e logout */}
       <SidebarFooter>
         <SidebarMenu>
+          {/* Link para o perfil */}
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
               <NavLink
@@ -109,6 +129,17 @@ export function AppSidebar() {
                 <User className="h-4 w-4 shrink-0" />
                 <span>Meu Perfil</span>
               </NavLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+
+          {/* 🔴 Botão de logout */}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={handleLogout}
+              className="text-red-500 hover:text-red-600 hover:bg-red-500/10 transition-colors"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              <span>Sair</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

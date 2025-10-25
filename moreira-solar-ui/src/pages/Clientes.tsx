@@ -8,10 +8,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Plus, Search, Eye, Pencil, Grid3X3, List } from "lucide-react";
+import { Plus, Search, Eye, Pencil, Grid3X3, List, Mail } from "lucide-react";
 import { ClienteDialog } from "@/components/ClienteDialog";
 import { ClienteDetailPanel } from "@/components/panels/ClienteDetailPanel";
 import { getVendedoresMap } from "@/hooks/useVendedor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { customAlphabet } from 'nanoid/non-secure';
+
 
 export default function Clientes() {
   const { clientes } = useClientes();
@@ -23,8 +29,11 @@ export default function Clientes() {
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [vendedoresMap, setVendedoresMap] = useState<Record<string, string>>({});
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
+  const [isInviting, setIsInviting] = useState(false);
 
-  // 🧠 Busca nomes dos vendedores apenas uma vez
+
   useEffect(() => {
     async function carregarVendedores() {
       const map = await getVendedoresMap();
@@ -33,7 +42,6 @@ export default function Clientes() {
     carregarVendedores();
   }, []);
 
-  // 🔎 Filtragem de clientes
   const clientesFiltrados = clientes.filter((cliente) => {
     const matchesSearch =
       cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -42,9 +50,7 @@ export default function Clientes() {
 
     const tipo =
       cliente.tipo_pessoa ||
-      (cliente.cpf_cnpj && cliente.cpf_cnpj.replace(/\D/g, "").length <= 11
-        ? "PF"
-        : "PJ");
+      (cliente.cpf_cnpj && cliente.cpf_cnpj.replace(/\D/g, "").length <= 11 ? "PF" : "PJ");
 
     const matchesTipo =
       tipoFiltro === "todos" ||
@@ -54,7 +60,6 @@ export default function Clientes() {
     return matchesSearch && matchesTipo;
   });
 
-  // 📊 KPIs
   const kpis = {
     total: clientes.length,
     pf: clientes.filter(
@@ -84,6 +89,11 @@ export default function Clientes() {
     setPanelOpen(true);
   };
 
+  const handleInvite = (cliente: Cliente) => {
+    setClienteSelecionado(cliente);
+    setInviteDialogOpen(true);
+  };
+
   const getInitials = (name: string) =>
     name
       .split(" ")
@@ -93,6 +103,72 @@ export default function Clientes() {
       .slice(0, 2);
 
   const podeEditar = true;
+
+  // ✅ Envio de convite via WhatsApp (n8n)
+  const handleEnviarConvite = async () => {
+    if (!clienteSelecionado) return;
+    const { telefone, nome, id } = clienteSelecionado;
+
+    if (!telefone) {
+      toast.error("Este cliente não possui telefone cadastrado.");
+      return;
+    }
+
+    try {
+      setIsInviting(true);
+
+      // 🔐 Token alfanumérico puro (sem _ nem -)
+      const gerarToken = customAlphabet(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+        32
+      );
+      const token = gerarToken();
+
+      // Expiração em 7 dias
+      const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      // 🔗 Link direto para cadastro (sem encode, pois não há caracteres especiais)
+      const linkCadastro = `${window.location.origin}/cadastroCliente?token=${token}`;
+
+      // 🧩 Atualiza cliente no Supabase
+      const { error: updateError } = await supabase
+        .from("clientes")
+        .update({
+          convite_token: token,
+          convite_expira_em: expiraEm.toISOString(),
+          convite_enviado_em: new Date().toISOString(),
+          convite_meio: "whatsapp",
+          convite_aceito: false,
+        })
+        .eq("id", id);
+
+      if (updateError) throw updateError;
+
+      // ☎️ Formata telefone com DDI (ex: +5565991234567)
+      let telefoneFormatado = telefone.trim();
+      if (!telefoneFormatado.startsWith("+")) {
+        telefoneFormatado = "+55" + telefoneFormatado.replace(/\D/g, "");
+      }
+
+      // 📤 Envia mensagem via n8n
+      await fetch("https://n8nwebhook.simplexsolucoes.com.br/webhook/whatsapp-convite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telefone: telefoneFormatado,
+          nome,
+          link: linkCadastro,
+        }),
+      });
+
+      toast.success("Convite enviado via WhatsApp com sucesso!");
+      setInviteDialogOpen(false);
+    } catch (err: any) {
+      toast.error("Erro ao enviar convite: " + err.message);
+    } finally {
+      setIsInviting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -168,8 +244,8 @@ export default function Clientes() {
         </CardContent>
       </Card>
 
-      {/* Lista */}
-      {view === "lista" ? (
+      {/* Tabela */}
+      {view === "lista" && (
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -191,20 +267,16 @@ export default function Clientes() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="h-8 w-8">
-                          <AvatarFallback className="text-xs">
-                            {getInitials(cliente.nome)}
-                          </AvatarFallback>
+                          <AvatarFallback className="text-xs">{getInitials(cliente.nome)}</AvatarFallback>
                         </Avatar>
                         <span className="font-medium">{cliente.nome}</span>
                       </div>
                     </TableCell>
                     <TableCell>{cliente.cpf_cnpj || "-"}</TableCell>
-                    <TableCell>{cliente.telefone}</TableCell>
+                    <TableCell>{cliente.telefone || "-"}</TableCell>
                     <TableCell>{cliente.email || "-"}</TableCell>
                     <TableCell>
-                      {cliente.cidade && cliente.estado
-                        ? `${cliente.cidade}/${cliente.estado}`
-                        : "-"}
+                      {cliente.cidade && cliente.estado ? `${cliente.cidade}/${cliente.estado}` : "-"}
                     </TableCell>
                     <TableCell>{vendedoresMap[cliente.user_id] || "—"}</TableCell>
                     <TableCell>
@@ -212,6 +284,9 @@ export default function Clientes() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => handleInvite(cliente)}>
+                          <Mail className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleView(cliente)}>
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -228,52 +303,6 @@ export default function Clientes() {
             </Table>
           </CardContent>
         </Card>
-      ) : (
-        // Cards
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {clientesFiltrados.map((cliente) => (
-            <Card key={cliente.id} className="cursor-pointer hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarFallback>{getInitials(cliente.nome)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <CardTitle className="text-base">{cliente.nome}</CardTitle>
-                      <Badge variant="outline" className="mt-1">
-                        {cliente.tipo_pessoa
-                          ? cliente.tipo_pessoa
-                          : cliente.cpf_cnpj && cliente.cpf_cnpj.replace(/\D/g, "").length <= 11
-                            ? "PF"
-                            : "PJ"}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="text-sm">
-                  <p className="text-muted-foreground">Telefone: {cliente.telefone}</p>
-                  <p className="text-muted-foreground">Email: {cliente.email || "-"}</p>
-                  <p className="text-muted-foreground">
-                    Vendedor: {vendedoresMap[cliente.user_id] || "—"}
-                  </p>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button variant="outline" size="sm" className="flex-1" onClick={() => handleView(cliente)}>
-                    Ver Detalhes
-                  </Button>
-                  {podeEditar && (
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(cliente)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       )}
 
       <ClienteDialog
@@ -283,11 +312,31 @@ export default function Clientes() {
         mode={editingCliente ? "edit" : "create"}
       />
 
-      <ClienteDetailPanel
-        cliente={selectedCliente}
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-      />
+      <ClienteDetailPanel cliente={selectedCliente} open={panelOpen} onClose={() => setPanelOpen(false)} />
+
+      {/* Diálogo de convite */}
+      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar Convite</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Cliente</Label>
+              <p className="font-medium">{clienteSelecionado?.nome}</p>
+            </div>
+            <div>
+              <Label>Método de envio</Label>
+              <p className="text-sm text-muted-foreground">Convite será enviado automaticamente via WhatsApp.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleEnviarConvite} disabled={isInviting}>
+              {isInviting ? "Enviando..." : "Enviar Convite"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

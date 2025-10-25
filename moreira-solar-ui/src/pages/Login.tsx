@@ -18,11 +18,11 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Se já está logado, redireciona
     if (user) {
-      navigate("/");
+      navigate("/", { replace: true }); // impede voltar ao login
     }
   }, [user, navigate]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

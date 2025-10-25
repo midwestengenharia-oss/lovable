@@ -71,6 +71,31 @@ export default function Orcamentos() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   });
+  // ==== CONFIGURAÇÃO DO USUÁRIO LOGADO ====
+
+  const usuarioLogado = JSON.parse(sessionStorage.getItem("usuario_logado") || "{}");
+  // Exemplo esperado: { id: "usr-001", nome: "Carlos Vendedor", tipo: "vendedor", gestor_id: "usr-010" }
+  // tipo pode ser: "admin" | "gestor" | "vendedor"
+
+  // Simulação temporária (remova quando tiver integração real)
+  const todosUsuarios = [
+    { id: "usr-001", nome: "Carlos Vendedor", tipo: "vendedor", gestor_id: "usr-010" },
+    { id: "usr-002", nome: "Ana Comercial", tipo: "vendedor", gestor_id: "usr-010" },
+    { id: "usr-010", nome: "Marcos Gestor", tipo: "gestor" },
+    { id: "usr-999", nome: "Admin", tipo: "admin" },
+  ];
+
+  // Função que decide quem aparece no Select
+  const getOpcoesDono = () => {
+    if (usuarioLogado.tipo === "admin") {
+      return todosUsuarios.filter((u) => u.tipo === "vendedor" || u.tipo === "gestor");
+    }
+    if (usuarioLogado.tipo === "gestor") {
+      return todosUsuarios.filter((u) => u.tipo === "vendedor" && u.gestor_id === usuarioLogado.id);
+    }
+    return []; // vendedor não vê lista
+  };
+
 
   const filteredOrcamentos = orcamentos.filter((orc) =>
     (orc.cliente_nome || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -203,17 +228,19 @@ export default function Orcamentos() {
     const now = new Date();
     const numeroProjeto = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
 
-
     addProjeto({
+      cliente_id: orc.cliente_id || null, // <-- ✅ inclui o cliente_id
       cliente_nome: orc.cliente_nome || "",
       nome: orc.cliente_nome,
       numero: numeroProjeto,
       orcamento_id: orc.id,
       kwp: ((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000,
-      responsavel_id: null,
+      responsavel_id: orc.vendedor_id || null,
       status: "Vistoria",
       proximos_passos: "Realizar vistoria técnica no local",
-      data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
       prioridade: "Média",
       progresso: 0,
       checklist: [
@@ -234,7 +261,7 @@ export default function Orcamentos() {
           id: `t-${Date.now()}`,
           data: new Date().toISOString(),
           titulo: "Projeto Iniciado",
-          descricao: "Orçamento aprovado e projeto criado"
+          descricao: "Orçamento aprovado e projeto criado",
         },
       ],
     });
@@ -242,6 +269,7 @@ export default function Orcamentos() {
     toast.success("Orçamento aprovado e projeto criado!");
     setPanelOpen(false);
   };
+
 
   const kanbanColumns: KanbanColumnData[] = [
     {
@@ -393,13 +421,42 @@ export default function Orcamentos() {
                       </div>
                       <div className="space-y-2">
                         <Label>Dono</Label>
-                        <Select value={formData.dono} onValueChange={(v) => setFormData({ ...formData, dono: v })}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Carlos Vendedor">Carlos Vendedor</SelectItem>
-                            <SelectItem value="Ana Comercial">Ana Comercial</SelectItem>
-                          </SelectContent>
-                        </Select>
+
+                        {usuarioLogado.tipo === "vendedor" ? (
+                          // 👇 Se for vendedor, exibe nome fixo e salva o ID
+                          <Input
+                            value={usuarioLogado.nome}
+                            disabled
+                            className="bg-gray-100 dark:bg-gray-800"
+                            onChange={() => { }}
+                          />
+                        ) : (
+                          // 👇 Admin ou Gestor veem o Select normalmente
+                          <Select
+                            value={formData.dono}
+                            onValueChange={(v) => {
+                              const userSelecionado = todosUsuarios.find((u) => u.nome === v);
+                              setFormData({
+                                ...formData,
+                                dono: v,
+                                responsavel_id: userSelecionado ? userSelecionado.id : null,
+                              });
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {getOpcoesDono().map((user) => (
+                                <SelectItem key={user.id} value={user.nome}>
+                                  {user.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+
+
                       </div>
                     </div>
                     <div className="space-y-2">

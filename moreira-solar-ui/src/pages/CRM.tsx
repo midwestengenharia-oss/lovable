@@ -16,7 +16,7 @@ import { KanbanCardData } from "@/components/kanban/KanbanCard";
 import { SidePanel } from "@/components/panels/SidePanel";
 import { Timeline, TimelineEvent } from "@/components/shared/Timeline";
 import { DropResult } from "@hello-pangea/dnd";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function CRM() {
   const { leads, isLoading, addLead, updateLead, deleteLead } = useLeads();

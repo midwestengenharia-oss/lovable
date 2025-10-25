@@ -22,18 +22,41 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import GestaoFaturas from "./pages/GestaoFaturas";
 import { ThemeProvider } from "@/contexts/ThemeContext";
-import { ThemeToggle } from "@/components/ThemeToggle";
+
+// Importações das páginas do cliente
+import Cadastro from "@/pages/CadastroCliente";
+import LoginCliente from "@/pages/LoginCliente";
+import AreaCliente from "@/pages/AreaCliente";
+import MeusProjetos from "@/pages/cliente/MeusProjetos";
+import MinhasFaturas from "@/pages/cliente/MinhasFaturas";
+import MeuPerfil from "@/pages/cliente/MeuPerfil";
+import Suporte from "@/pages/cliente/Suporte";
 
 const queryClient = new QueryClient();
 
+/* 🔒 Rotas autenticadas */
 const AppRoutes = () => {
   const { user, loading } = useAuth();
+
+  // 🔸 Rotas públicas (sem necessidade de login)
+  const publicPaths = [
+    "/auth",
+    "/cadastroCliente",
+    "/login-cliente",
+    "/area-cliente",
+    "/cliente/projetos",
+    "/cliente/faturas",
+    "/cliente/perfil",
+    "/cliente/suporte"
+  ];
+  const currentPath = window.location.pathname;
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">Carregando...</div>;
   }
 
-  if (!user) {
+  // 🚫 Se não estiver logado e a rota não for pública → redireciona
+  if (!user && !publicPaths.includes(currentPath)) {
     return <Navigate to="/auth" replace />;
   }
 
@@ -59,6 +82,7 @@ const AppRoutes = () => {
   );
 };
 
+/* 🌐 Aplicação principal */
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -68,7 +92,19 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <Routes>
+              {/* ⚡ Rotas públicas - Cadastro e Login */}
               <Route path="/auth" element={<Auth />} />
+              <Route path="/cadastroCliente" element={<Cadastro />} />
+              <Route path="/login-cliente" element={<LoginCliente />} />
+
+              {/* ⚡ Rotas públicas - Área do Cliente */}
+              <Route path="/area-cliente" element={<AreaCliente />} />
+              <Route path="/cliente/projetos" element={<MeusProjetos />} />
+              <Route path="/cliente/faturas" element={<MinhasFaturas />} />
+              <Route path="/cliente/perfil" element={<MeuPerfil />} />
+              <Route path="/cliente/suporte" element={<Suporte />} />
+
+              {/* 🔐 Rotas autenticadas */}
               <Route path="/*" element={<AppRoutes />} />
             </Routes>
           </BrowserRouter>
