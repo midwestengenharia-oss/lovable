@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(npm run:*)",
+      "Bash(dir:*)",
+      "Bash(npm install)",
+      "mcp__ide__getDiagnostics",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nComplete Supabase migration and fix field naming issues\n\nMigrated all remaining components from AppContext to Supabase hooks,\nensuring consistent use of snake_case field names throughout the\napplication. Fixed critical issues preventing proper data display and\nform submissions.\n\nKey changes:\n- Removed AppContext and migrated all components to Supabase hooks\n- Fixed field naming: cpfCnpj → cpf_cnpj, dataCadastro → data_cadastro\n- Fixed calculadoras to handle undefined parametros safely\n- Added full edit support to ClienteDialog with proper data loading\n- Fixed ClienteDetailPanel to display projects and charges correctly\n- Added new hooks: useTitularesEnergia, useUnidadesConsumidoras, etc.\n- Created migration documentation and archive of legacy code\n\nThis ensures all CRUD operations work correctly with the Supabase\nbackend and prevents runtime errors from field name mismatches.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git credential-cache:*)",
+      "Bash(cmdkey /list:*)",
+      "Bash(findstr:*)",
+      "Bash(gh:*)",
+      "Bash(git init:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
