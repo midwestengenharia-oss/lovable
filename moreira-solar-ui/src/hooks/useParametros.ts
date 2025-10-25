@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export interface Parametro {
   id: string;
@@ -30,6 +31,8 @@ export interface Parametros {
 }
 
 export function useParametros() {
+  const queryClient = useQueryClient();
+
   const { data: parametrosArray = [], isLoading } = useQuery({
     queryKey: ['parametros'],
     queryFn: async () => {
@@ -69,10 +72,60 @@ export function useParametros() {
     descontoVendaGC: parseFloat(getParametro('desconto_venda_gc', 0.20)),
   };
 
+  // Mutation para atualizar parâmetros
+  const updateParametros = useMutation({
+    mutationFn: async (novosParametros: Parametros) => {
+      const updates = [
+        { chave: 'taxa_juros_mes', valor: novosParametros.taxaJurosMes },
+        { chave: 'potencia_por_placa_wp', valor: novosParametros.potenciaPorPlacaWp },
+        { chave: 'adicional_estrut_solo_por_placa', valor: novosParametros.adicionalEstrutSoloPorPlaca },
+        { chave: 'prazos', valor: novosParametros.prazos },
+        { chave: 'numero_whatsapp', valor: novosParametros.numeroWhatsApp },
+        { chave: 'tusd', valor: novosParametros.tusd },
+        { chave: 'te', valor: novosParametros.te },
+        { chave: 'fio_b', valor: novosParametros.fioB },
+        { chave: 'reajuste_medio', valor: novosParametros.reajusteMedio },
+        { chave: 'geracao_kwp', valor: novosParametros.geracaoKwp },
+        { chave: 'over_load', valor: novosParametros.overLoad },
+        { chave: 'pis_confins', valor: novosParametros.pisConfins },
+        { chave: 'icms', valor: novosParametros.icms },
+        { chave: 'uf', valor: novosParametros.uf },
+        { chave: 'tarifa_comercial', valor: novosParametros.tarifaComercial },
+        { chave: 'taxa_compra_energia_investimento', valor: novosParametros.taxaCompraEnergiaInvestimento },
+        { chave: 'prazo_contrato_investimento', valor: novosParametros.prazoContratoInvestimento },
+        { chave: 'desconto_venda_gc', valor: novosParametros.descontoVendaGC },
+      ];
+
+      // Atualizar cada parâmetro
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('parametros')
+          .upsert({
+            chave: update.chave,
+            valor: update.valor
+          }, {
+            onConflict: 'chave'
+          });
+
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['parametros'] });
+      toast.success('Parâmetros atualizados com sucesso!');
+    },
+    onError: (error) => {
+      console.error('Erro ao atualizar parâmetros:', error);
+      toast.error('Erro ao atualizar parâmetros');
+    }
+  });
+
   return {
     parametros,
     parametrosArray,
     isLoading,
-    getParametro
+    getParametro,
+    updateParametros: updateParametros.mutate,
+    isUpdating: updateParametros.isPending
   };
 }

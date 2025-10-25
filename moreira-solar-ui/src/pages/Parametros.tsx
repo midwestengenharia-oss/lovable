@@ -1,72 +1,74 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useEquipamentos, Equipamento } from "@/hooks/useEquipamentos";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useEquipamentos, Equipamento, EquipamentoInput } from "@/hooks/useEquipamentos";
+import { useParametros } from "@/hooks/useParametros";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
-// TODO: Create mutations for useEquipamentos (add, update, delete)
-// TODO: Create useParametros mutations for updating parameters
-
 export default function Parametros() {
-  const { equipamentos, isLoading: isLoadingEquipamentos } = useEquipamentos();
+  const {
+    equipamentos,
+    isLoading: isLoadingEquipamentos,
+    addEquipamento,
+    updateEquipamento,
+    deleteEquipamento,
+    isAdding,
+    isUpdating,
+    isDeleting
+  } = useEquipamentos();
 
-  // TODO: Replace with actual parametros from useParametros hook
-  const defaultParams = {
-    taxaJurosMes: 0.015,
-    tarifaComercial: 0.89,
-    tusd: 0.35,
-    te: 0.45,
-    fioB: 0.25,
-    reajusteMedio: 0.08,
-    geracaoKwp: 150,
-    overLoad: 1.2,
-    pisConfins: 0.0965,
-    icms: 0.18,
-    uf: "SP",
-    adicionalEstrutSoloPorPlaca: 50,
-    numeroWhatsApp: "5511999999999",
-    taxaCompraEnergiaInvestimento: 0.45,
-    prazoContratoInvestimento: 20,
-    descontoVendaGC: 0.15,
-    prazos: [36, 48, 60, 72, 84],
-  };
+  const {
+    parametros,
+    isLoading: isLoadingParametros,
+    updateParametros,
+    isUpdating: isUpdatingParametros
+  } = useParametros();
 
-  const [params, setParams] = useState(defaultParams);
+  const [params, setParams] = useState(parametros);
   const [equipDialogOpen, setEquipDialogOpen] = useState(false);
   const [equipTipo, setEquipTipo] = useState<"modulo" | "inversor">("modulo");
   const [equipEdit, setEquipEdit] = useState<Equipamento | null>(null);
-  const [equipForm, setEquipForm] = useState<Omit<Equipamento, "id">>({
+  const [equipForm, setEquipForm] = useState<EquipamentoInput>({
     tipo: "modulo",
     nome: "",
-    potencia_w: undefined,
+    potenciaW: undefined,
     valor: 0,
     ativo: true,
   });
 
+  // Atualizar params quando parametros do banco mudarem
+  useEffect(() => {
+    setParams(parametros);
+  }, [parametros]);
+
   const handleSave = () => {
-    // TODO: Implement updateParametros with Supabase
-    console.log("TODO: Save parameters to Supabase", params);
-    toast.info("Funcionalidade de salvar parâmetros em desenvolvimento");
+    updateParametros(params);
   };
 
   const handleOpenEquipDialog = (tipo: "modulo" | "inversor", equip?: Equipamento) => {
     setEquipTipo(tipo);
     if (equip) {
       setEquipEdit(equip);
-      setEquipForm(equip);
+      setEquipForm({
+        tipo: equip.tipo,
+        nome: equip.nome,
+        potenciaW: equip.potenciaW,
+        valor: equip.valor,
+        ativo: equip.ativo
+      });
     } else {
       setEquipEdit(null);
       setEquipForm({
         tipo,
         nome: "",
-        potencia_w: tipo === "modulo" ? 0 : undefined,
+        potenciaW: tipo === "modulo" ? 0 : undefined,
         valor: 0,
         ativo: true,
       });
@@ -79,27 +81,22 @@ export default function Parametros() {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
-    if (equipForm.tipo === "modulo" && (!equipForm.potencia_w || equipForm.potencia_w <= 0)) {
+    if (equipForm.tipo === "modulo" && (!equipForm.potenciaW || equipForm.potenciaW <= 0)) {
       toast.error("Informe a potência do módulo");
       return;
     }
 
-    // TODO: Implement equipment mutations
     if (equipEdit) {
-      console.log("TODO: Update equipment", equipEdit.id, equipForm);
-      toast.info("Funcionalidade de atualizar equipamento em desenvolvimento");
+      updateEquipamento({ ...equipForm, id: equipEdit.id });
     } else {
-      console.log("TODO: Add equipment", equipForm);
-      toast.info("Funcionalidade de adicionar equipamento em desenvolvimento");
+      addEquipamento(equipForm);
     }
     setEquipDialogOpen(false);
   };
 
   const handleDeleteEquip = (id: string) => {
     if (confirm("Deseja realmente excluir este equipamento?")) {
-      // TODO: Implement equipment deletion
-      console.log("TODO: Delete equipment", id);
-      toast.info("Funcionalidade de excluir equipamento em desenvolvimento");
+      deleteEquipamento(id);
     }
   };
 
@@ -316,8 +313,8 @@ export default function Parametros() {
               </div>
             </CardContent>
           </Card>
-          <Button onClick={handleSave} size="lg">
-            Salvar Parâmetros
+          <Button onClick={handleSave} size="lg" disabled={isUpdatingParametros}>
+            {isUpdatingParametros ? "Salvando..." : "Salvar Parâmetros"}
           </Button>
         </TabsContent>
 
@@ -354,7 +351,7 @@ export default function Parametros() {
                         .map((equip) => (
                           <TableRow key={equip.id}>
                             <TableCell>{equip.nome}</TableCell>
-                            <TableCell>{equip.potencia_w}W</TableCell>
+                            <TableCell>{equip.potenciaW}W</TableCell>
                             <TableCell>R$ {equip.valor.toFixed(2)}</TableCell>
                             <TableCell>{equip.ativo ? "Sim" : "Não"}</TableCell>
                             <TableCell>
@@ -461,9 +458,9 @@ export default function Parametros() {
                 <Input
                   id="equipPotencia"
                   type="number"
-                  value={equipForm.potencia_w || ""}
+                  value={equipForm.potenciaW || ""}
                   onChange={(e) =>
-                    setEquipForm({ ...equipForm, potencia_w: parseInt(e.target.value) || 0 })
+                    setEquipForm({ ...equipForm, potenciaW: parseInt(e.target.value) || 0 })
                   }
                 />
               </div>
@@ -491,10 +488,12 @@ export default function Parametros() {
               </Label>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setEquipDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setEquipDialogOpen(false)} disabled={isAdding || isUpdating}>
                 Cancelar
               </Button>
-              <Button onClick={handleSaveEquip}>Salvar</Button>
+              <Button onClick={handleSaveEquip} disabled={isAdding || isUpdating}>
+                {isAdding || isUpdating ? "Salvando..." : "Salvar"}
+              </Button>
             </div>
           </div>
         </DialogContent>
