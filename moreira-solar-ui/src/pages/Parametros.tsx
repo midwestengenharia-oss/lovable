@@ -46,6 +46,24 @@ export default function Parametros() {
     isUpdating: isUpdatingParametros
   } = useParametros();
 
+  // Usar strings para manter vírgulas durante digitação
+  const [paramsStr, setParamsStr] = useState({
+    taxaJurosMes: '',
+    tarifaComercial: '',
+    tusd: '',
+    te: '',
+    fioB: '',
+    reajusteMedio: '',
+    geracaoKwp: '',
+    overLoad: '',
+    pisConfins: '',
+    icms: '',
+    adicionalEstrutSoloPorPlaca: '',
+    taxaCompraEnergiaInvestimento: '',
+    prazoContratoInvestimento: '',
+    descontoVendaGC: '',
+  });
+
   const [params, setParams] = useState(parametros);
   const [equipDialogOpen, setEquipDialogOpen] = useState(false);
   const [equipTipo, setEquipTipo] = useState<"modulo" | "inversor">("modulo");
@@ -58,10 +76,29 @@ export default function Parametros() {
     ativo: true,
   });
 
-  // Atualizar params quando parametros do banco mudarem
+  // Atualizar params quando parametros são carregados
   useEffect(() => {
-    setParams(parametros);
-  }, [parametros]);
+    if (!isLoadingParametros && parametros) {
+      setParams(parametros);
+      // Inicializar strings de exibição
+      setParamsStr({
+        taxaJurosMes: (parametros.taxaJurosMes * 100).toString(),
+        tarifaComercial: parametros.tarifaComercial.toString(),
+        tusd: parametros.tusd.toString(),
+        te: parametros.te.toString(),
+        fioB: parametros.fioB.toString(),
+        reajusteMedio: (parametros.reajusteMedio * 100).toString(),
+        geracaoKwp: parametros.geracaoKwp.toString(),
+        overLoad: parametros.overLoad.toString(),
+        pisConfins: (parametros.pisConfins * 100).toString(),
+        icms: (parametros.icms * 100).toString(),
+        adicionalEstrutSoloPorPlaca: parametros.adicionalEstrutSoloPorPlaca.toString(),
+        taxaCompraEnergiaInvestimento: parametros.taxaCompraEnergiaInvestimento.toString(),
+        prazoContratoInvestimento: parametros.prazoContratoInvestimento.toString(),
+        descontoVendaGC: (parametros.descontoVendaGC * 100).toString(),
+      });
+    }
+  }, [isLoadingParametros]);
 
   const handleSave = () => {
     updateParametros(params);
@@ -137,10 +174,11 @@ export default function Parametros() {
                   <Input
                     id="taxaJurosMes"
                     type="text"
-                    value={formatDecimal(params.taxaJurosMes * 100)}
-                    onChange={(e) =>
-                      setParams({ ...params, taxaJurosMes: parseDecimalBR(e.target.value) / 100 })
-                    }
+                    value={paramsStr.taxaJurosMes}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, taxaJurosMes: e.target.value });
+                      setParams({ ...params, taxaJurosMes: parseDecimalBR(e.target.value) / 100 });
+                    }}
                     placeholder="2,00"
                   />
                 </div>
@@ -149,10 +187,11 @@ export default function Parametros() {
                   <Input
                     id="tarifaComercial"
                     type="text"
-                    value={formatDecimal(params.tarifaComercial)}
-                    onChange={(e) =>
-                      setParams({ ...params, tarifaComercial: parseDecimalBR(e.target.value) })
-                    }
+                    value={paramsStr.tarifaComercial}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, tarifaComercial: e.target.value });
+                      setParams({ ...params, tarifaComercial: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="1,10"
                   />
                 </div>
@@ -161,8 +200,11 @@ export default function Parametros() {
                   <Input
                     id="tusd"
                     type="text"
-                    value={formatDecimal(params.tusd)}
-                    onChange={(e) => setParams({ ...params, tusd: parseDecimalBR(e.target.value) })}
+                    value={paramsStr.tusd}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, tusd: e.target.value });
+                      setParams({ ...params, tusd: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="0,30"
                   />
                 </div>
@@ -171,8 +213,11 @@ export default function Parametros() {
                   <Input
                     id="te"
                     type="text"
-                    value={formatDecimal(params.te)}
-                    onChange={(e) => setParams({ ...params, te: parseDecimalBR(e.target.value) })}
+                    value={paramsStr.te}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, te: e.target.value });
+                      setParams({ ...params, te: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="0,40"
                   />
                 </div>
@@ -181,8 +226,11 @@ export default function Parametros() {
                   <Input
                     id="fioB"
                     type="text"
-                    value={formatDecimal(params.fioB)}
-                    onChange={(e) => setParams({ ...params, fioB: parseDecimalBR(e.target.value) })}
+                    value={paramsStr.fioB}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, fioB: e.target.value });
+                      setParams({ ...params, fioB: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="0,05"
                   />
                 </div>
@@ -191,10 +239,11 @@ export default function Parametros() {
                   <Input
                     id="reajusteMedio"
                     type="text"
-                    value={formatDecimal(params.reajusteMedio * 100)}
-                    onChange={(e) =>
-                      setParams({ ...params, reajusteMedio: parseDecimalBR(e.target.value) / 100 })
-                    }
+                    value={paramsStr.reajusteMedio}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, reajusteMedio: e.target.value });
+                      setParams({ ...params, reajusteMedio: parseDecimalBR(e.target.value) / 100 });
+                    }}
                     placeholder="8,00"
                   />
                 </div>
@@ -203,10 +252,11 @@ export default function Parametros() {
                   <Input
                     id="geracaoKwp"
                     type="text"
-                    value={formatDecimal(params.geracaoKwp)}
-                    onChange={(e) =>
-                      setParams({ ...params, geracaoKwp: parseDecimalBR(e.target.value) })
-                    }
+                    value={paramsStr.geracaoKwp}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, geracaoKwp: e.target.value });
+                      setParams({ ...params, geracaoKwp: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="130"
                   />
                 </div>
@@ -215,8 +265,11 @@ export default function Parametros() {
                   <Input
                     id="overLoad"
                     type="text"
-                    value={formatDecimal(params.overLoad)}
-                    onChange={(e) => setParams({ ...params, overLoad: parseDecimalBR(e.target.value) })}
+                    value={paramsStr.overLoad}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, overLoad: e.target.value });
+                      setParams({ ...params, overLoad: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="1,35"
                   />
                 </div>
@@ -225,10 +278,11 @@ export default function Parametros() {
                   <Input
                     id="pisConfins"
                     type="text"
-                    value={formatDecimal(params.pisConfins * 100)}
-                    onChange={(e) =>
-                      setParams({ ...params, pisConfins: parseDecimalBR(e.target.value) / 100 })
-                    }
+                    value={paramsStr.pisConfins}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, pisConfins: e.target.value });
+                      setParams({ ...params, pisConfins: parseDecimalBR(e.target.value) / 100 });
+                    }}
                     placeholder="9,65"
                   />
                 </div>
@@ -237,10 +291,11 @@ export default function Parametros() {
                   <Input
                     id="icms"
                     type="text"
-                    value={formatDecimal(params.icms * 100)}
-                    onChange={(e) =>
-                      setParams({ ...params, icms: parseDecimalBR(e.target.value) / 100 })
-                    }
+                    value={paramsStr.icms}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, icms: e.target.value });
+                      setParams({ ...params, icms: parseDecimalBR(e.target.value) / 100 });
+                    }}
                     placeholder="18,00"
                   />
                 </div>
@@ -258,13 +313,11 @@ export default function Parametros() {
                   <Input
                     id="adicionalEstrutSoloPorPlaca"
                     type="text"
-                    value={formatDecimal(params.adicionalEstrutSoloPorPlaca)}
-                    onChange={(e) =>
-                      setParams({
-                        ...params,
-                        adicionalEstrutSoloPorPlaca: parseDecimalBR(e.target.value),
-                      })
-                    }
+                    value={paramsStr.adicionalEstrutSoloPorPlaca}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, adicionalEstrutSoloPorPlaca: e.target.value });
+                      setParams({ ...params, adicionalEstrutSoloPorPlaca: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="250,00"
                   />
                 </div>
@@ -282,10 +335,11 @@ export default function Parametros() {
                   <Input
                     id="taxaCompraInvest"
                     type="text"
-                    value={formatDecimal(params.taxaCompraEnergiaInvestimento)}
-                    onChange={(e) =>
-                      setParams({ ...params, taxaCompraEnergiaInvestimento: parseDecimalBR(e.target.value) })
-                    }
+                    value={paramsStr.taxaCompraEnergiaInvestimento}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, taxaCompraEnergiaInvestimento: e.target.value });
+                      setParams({ ...params, taxaCompraEnergiaInvestimento: parseDecimalBR(e.target.value) });
+                    }}
                     placeholder="0,65"
                   />
                 </div>
@@ -294,10 +348,11 @@ export default function Parametros() {
                   <Input
                     id="prazoContratoInvest"
                     type="text"
-                    value={formatDecimal(params.prazoContratoInvestimento)}
-                    onChange={(e) =>
-                      setParams({ ...params, prazoContratoInvestimento: Math.floor(parseDecimalBR(e.target.value)) })
-                    }
+                    value={paramsStr.prazoContratoInvestimento}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, prazoContratoInvestimento: e.target.value });
+                      setParams({ ...params, prazoContratoInvestimento: Math.floor(parseDecimalBR(e.target.value)) });
+                    }}
                     placeholder="15"
                   />
                 </div>
@@ -306,10 +361,11 @@ export default function Parametros() {
                   <Input
                     id="descontoGC"
                     type="text"
-                    value={formatDecimal(params.descontoVendaGC * 100)}
-                    onChange={(e) =>
-                      setParams({ ...params, descontoVendaGC: parseDecimalBR(e.target.value) / 100 })
-                    }
+                    value={paramsStr.descontoVendaGC}
+                    onChange={(e) => {
+                      setParamsStr({ ...paramsStr, descontoVendaGC: e.target.value });
+                      setParams({ ...params, descontoVendaGC: parseDecimalBR(e.target.value) / 100 });
+                    }}
                     placeholder="20,00"
                   />
                 </div>

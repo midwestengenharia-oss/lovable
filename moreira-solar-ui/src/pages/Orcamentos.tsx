@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Orcamento } from "@/contexts/AppContext";
+import { Orcamento } from "@/types/supabase";
 import { useOrcamentos } from "@/hooks/useOrcamentos";
 import { useEquipamentos } from "@/hooks/useEquipamentos";
 import { useParametros } from "@/hooks/useParametros";
@@ -47,32 +47,33 @@ export default function Orcamentos() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedOrcamento, setSelectedOrcamento] = useState<Orcamento | null>(null);
 
-  const [formData, setFormData] = useState<Omit<Orcamento, "id" | "numero">>({
-    cliente: "",
-    conta: undefined,
-    consumo: undefined,
-    kwp: 0,
-    placas: 0,
-    modeloPlaca: "",
-    inversor: "",
-    tipoTelhado: "",
-    fase: "Bifásico",
-    estruturaSolo: false,
-    total: 0,
-    status: "Rascunho",
-    validade: "",
-    dono: "Carlos Vendedor",
-    precoBase: 0,
-    maoDeObra: 0,
-    frete: 0,
-    adicionais: 0,
-    desconto: 0,
-    markup: 1.3,
-    observacoes: "",
+  const [formData, setFormData] = useState<Omit<Orcamento, "id" | "numero" | "user_id">>({
+    data: new Date().toISOString(),
+    validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+    cliente_id: null,
+    cliente_nome: "",
+    geracao_kwh: 0,
+    qtd_modulos: 0,
+    modelo_modulo: "",
+    potencia_modulo_w: 550,
+    inversor_kw: 0,
+    valor_base: 0,
+    custo_estrutura_solo: 0,
+    valor_total: 0,
+    estrutura_solo: false,
+    parcela_selecionada: null,
+    prestacao: null,
+    economia_mensal: null,
+    economia_percentual: null,
+    payback_meses: null,
+    status: "pendente",
+    vendedor_id: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
   });
 
   const filteredOrcamentos = orcamentos.filter((orc) =>
-    orc.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (orc.cliente_nome || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     orc.numero.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -83,80 +84,77 @@ export default function Orcamentos() {
     } else {
       setEditingOrc(null);
       setFormData({
-        cliente: "",
-        conta: undefined,
-        consumo: undefined,
-        kwp: 0,
-        placas: 0,
-        modeloPlaca: "",
-        inversor: "",
-        tipoTelhado: "",
-        fase: "Bifásico",
-        estruturaSolo: false,
-        total: 0,
-        status: "Rascunho",
+        data: new Date().toISOString(),
         validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        dono: "Carlos Vendedor",
-        precoBase: 0,
-        maoDeObra: 0,
-        frete: 0,
-        adicionais: 0,
-        desconto: 0,
-        markup: 1.3,
-        observacoes: "",
+        cliente_id: null,
+        cliente_nome: "",
+        geracao_kwh: 0,
+        qtd_modulos: 0,
+        modelo_modulo: "",
+        potencia_modulo_w: 550,
+        inversor_kw: 0,
+        valor_base: 0,
+        custo_estrutura_solo: 0,
+        valor_total: 0,
+        estrutura_solo: false,
+        parcela_selecionada: null,
+        prestacao: null,
+        economia_mensal: null,
+        economia_percentual: null,
+        payback_meses: null,
+        status: "pendente",
+        vendedor_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
     }
     setDialogOpen(true);
   };
 
   const calcularDimensionamento = () => {
-    let consumoCalc = formData.consumo || 0;
-    if (formData.conta && !formData.consumo) {
-      // Estimativa: conta / 0.8 (tarifa média aproximada)
-      consumoCalc = Math.round(formData.conta / 0.8);
-      setFormData((prev) => ({ ...prev, consumo: consumoCalc }));
-    }
-    
-    const kwpCalc = consumoCalc / 120;
-    const potenciaPlaca = parametros.potenciaPorPlacaWp / 1000;
-    const placasCalc = Math.ceil(kwpCalc / potenciaPlaca);
-    
-    setFormData((prev) => ({ ...prev, kwp: parseFloat(kwpCalc.toFixed(2)), placas: placasCalc }));
+    const geracaoKwh = formData.geracao_kwh || 0;
+    const kwpCalc = geracaoKwh / 120;
+    const potenciaPlaca = (formData.potencia_modulo_w || parametros.potenciaPorPlacaWp) / 1000;
+    const modulosCalc = Math.ceil(kwpCalc / potenciaPlaca);
+
+    setFormData((prev) => ({ ...prev, qtd_modulos: modulosCalc }));
     toast.success("Dimensionamento calculado!");
   };
 
   const recalcularTotal = () => {
-    const { precoBase, maoDeObra, frete, adicionais, desconto, markup, estruturaSolo, placas } = formData;
-    const adicionalSolo = estruturaSolo ? parametros.adicionalEstrutSoloPorPlaca * placas : 0;
-    const subtotal = precoBase + maoDeObra + frete + adicionais + adicionalSolo - desconto;
-    const totalCalc = subtotal * markup;
-    setFormData((prev) => ({ ...prev, total: parseFloat(totalCalc.toFixed(2)) }));
+    const { valor_base, custo_estrutura_solo, estrutura_solo, qtd_modulos } = formData;
+    const adicionalSolo = estrutura_solo ? parametros.adicionalEstrutSoloPorPlaca * qtd_modulos : 0;
+    const totalCalc = valor_base + custo_estrutura_solo + adicionalSolo;
+    setFormData((prev) => ({ ...prev, valor_total: parseFloat(totalCalc.toFixed(2)) }));
   };
 
   const calcularSimulacao = (prazo: number) => {
     const i = parametros.taxaJurosMes;
     const n = prazo;
-    const pv = formData.total;
-    
+    const pv = formData.valor_total || 0;
+
     if (pv === 0) return { pmt: 0, pv: 0 };
-    
+
     // PMT = PV * i * (1+i)^n / ((1+i)^n - 1)
     const pmt = (pv * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1);
-    
+
     return { pmt: parseFloat(pmt.toFixed(2)), pv };
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.cliente || formData.total === 0) {
+    if (!formData.cliente_nome || (formData.valor_total || 0) === 0) {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
 
+    const now = new Date();
+    const numero = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
     if (editingOrc) {
       updateOrcamento({ id: editingOrc.id, ...formData });
     } else {
-      addOrcamento(formData);
+      addOrcamento({ numero, ...formData });
     }
     setDialogOpen(false);
   };
@@ -167,14 +165,15 @@ export default function Orcamentos() {
     }
   };
 
-  const getStatusBadge = (status: Orcamento["status"]) => {
-    const variants: Record<Orcamento["status"], string> = {
-      Rascunho: "bg-muted text-muted-foreground",
-      Enviado: "bg-primary text-primary-foreground",
-      Aprovado: "bg-secondary text-secondary-foreground",
-      Reprovado: "bg-destructive text-destructive-foreground",
+  const getStatusBadge = (status?: string | null) => {
+    const statusMap: Record<string, { label: string; className: string }> = {
+      pendente: { label: "Pendente", className: "bg-muted text-muted-foreground" },
+      enviado: { label: "Enviado", className: "bg-primary text-primary-foreground" },
+      aprovado: { label: "Aprovado", className: "bg-secondary text-secondary-foreground" },
+      reprovado: { label: "Reprovado", className: "bg-destructive text-destructive-foreground" },
     };
-    return <Badge className={variants[status]}>{status}</Badge>;
+    const statusInfo = statusMap[status || "pendente"] || statusMap.pendente;
+    return <Badge className={statusInfo.className}>{statusInfo.label}</Badge>;
   };
 
   const handleCardClick = (item: KanbanCardData) => {
@@ -203,9 +202,9 @@ export default function Orcamentos() {
     updateOrcamento({ id: orc.id, status: "Aprovado" });
     
     addProjeto({
-      cliente: orc.cliente,
+      cliente: orc.cliente_nome || "",
       orcamentoNumero: orc.numero,
-      kwp: orc.kwp,
+      kwp: ((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000,
       responsavel: "Eng. Roberto",
       status: "Vistoria",
       proximosPassos: "Realizar vistoria técnica no local",
@@ -221,7 +220,7 @@ export default function Orcamentos() {
       ],
       documentos: [],
       custos: {
-        orcado: orc.total,
+        orcado: orc.valor_total,
         real: 0,
         itens: [],
       },
@@ -249,18 +248,18 @@ export default function Orcamentos() {
         .map((orc) => ({
           id: orc.id,
           title: orc.numero,
-          subtitle: orc.cliente,
+          subtitle: orc.cliente_nome || "",
           badges: [
-            { label: `${orc.kwp} kWp`, variant: "outline" },
+            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
             { 
-              label: new Date(orc.validade) < new Date() ? "Expirado" : "Válido", 
-              variant: new Date(orc.validade) < new Date() ? "destructive" : "secondary" 
+              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido", 
+              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary" 
             },
           ],
           metadata: {
-            total: `R$ ${orc.total.toLocaleString("pt-BR")}`,
-            validade: new Date(orc.validade).toLocaleDateString("pt-BR"),
-            dono: orc.dono,
+            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+            dono: "Sistema",
           },
         })),
     },
@@ -273,18 +272,18 @@ export default function Orcamentos() {
         .map((orc) => ({
           id: orc.id,
           title: orc.numero,
-          subtitle: orc.cliente,
+          subtitle: orc.cliente_nome || "",
           badges: [
-            { label: `${orc.kwp} kWp`, variant: "outline" },
+            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
             { 
-              label: new Date(orc.validade) < new Date() ? "Expirado" : "Válido", 
-              variant: new Date(orc.validade) < new Date() ? "destructive" : "secondary" 
+              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido", 
+              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary" 
             },
           ],
           metadata: {
-            total: `R$ ${orc.total.toLocaleString("pt-BR")}`,
-            validade: new Date(orc.validade).toLocaleDateString("pt-BR"),
-            dono: orc.dono,
+            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+            dono: "Sistema",
           },
         })),
     },
@@ -297,15 +296,15 @@ export default function Orcamentos() {
         .map((orc) => ({
           id: orc.id,
           title: orc.numero,
-          subtitle: orc.cliente,
+          subtitle: orc.cliente_nome || "",
           badges: [
-            { label: `${orc.kwp} kWp`, variant: "outline" },
+            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
             { label: "✓ Aprovado", variant: "secondary" },
           ],
           metadata: {
-            total: `R$ ${orc.total.toLocaleString("pt-BR")}`,
-            validade: new Date(orc.validade).toLocaleDateString("pt-BR"),
-            dono: orc.dono,
+            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+            dono: "Sistema",
           },
         })),
     },
@@ -318,15 +317,15 @@ export default function Orcamentos() {
         .map((orc) => ({
           id: orc.id,
           title: orc.numero,
-          subtitle: orc.cliente,
+          subtitle: orc.cliente_nome || "",
           badges: [
-            { label: `${orc.kwp} kWp`, variant: "outline" },
+            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
             { label: "✗ Reprovado", variant: "destructive" },
           ],
           metadata: {
-            total: `R$ ${orc.total.toLocaleString("pt-BR")}`,
-            validade: new Date(orc.validade).toLocaleDateString("pt-BR"),
-            dono: orc.dono,
+            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+            dono: "Sistema",
           },
         })),
     },
@@ -362,7 +361,7 @@ export default function Orcamentos() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Cliente *</Label>
-                      <Input value={formData.cliente} onChange={(e) => setFormData({ ...formData, cliente: e.target.value })} required />
+                      <Input value={formData.cliente_nome || ""} onChange={(e) => setFormData({ ...formData, cliente_nome: e.target.value })} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Tipo de Telhado</Label>
@@ -410,7 +409,7 @@ export default function Orcamentos() {
                       <Label>Conta (R$)</Label>
                       <Input
                         type="number"
-                        value={formData.conta || ""}
+                        value={formData.geracao_kwh || ""}
                         onChange={(e) => setFormData({ ...formData, conta: parseFloat(e.target.value) || undefined })}
                       />
                     </div>
@@ -431,11 +430,11 @@ export default function Orcamentos() {
                     </div>
                     <div className="space-y-2">
                       <Label>Qtd de Placas</Label>
-                      <Input type="number" value={formData.placas} onChange={(e) => setFormData({ ...formData, placas: parseInt(e.target.value) || 0 })} />
+                      <Input type="number" value={formData.qtd_modulos || 0} onChange={(e) => setFormData({ ...formData, qtd_modulos: parseInt(e.target.value) || 0 })} />
                     </div>
                     <div className="space-y-2">
                       <Label>Modelo de Placa</Label>
-                      <Select value={formData.modeloPlaca} onValueChange={(v) => setFormData({ ...formData, modeloPlaca: v })}>
+                      <Select value={formData.modelo_modulo || ""} onValueChange={(v) => setFormData({ ...formData, modelo_modulo: v })}>
                         <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                         <SelectContent>
                           {catalogoPlacas.map((p) => (
@@ -484,7 +483,7 @@ export default function Orcamentos() {
                     </div>
                     <div className="space-y-2">
                       <Label>Adicionais (R$)</Label>
-                      <Input type="number" value={formData.adicionais} onChange={(e) => setFormData({ ...formData, adicionais: parseFloat(e.target.value) || 0 })} />
+                      <Input type="number" value={formData.custo_estrutura_solo || 0} onChange={(e) => setFormData({ ...formData, custo_estrutura_solo: parseFloat(e.target.value) || 0 })} />
                     </div>
                     <div className="space-y-2">
                       <Label>Desconto (R$)</Label>
@@ -498,7 +497,7 @@ export default function Orcamentos() {
                   <Button type="button" variant="secondary" onClick={recalcularTotal}>Recalcular Total</Button>
                   <div className="p-4 bg-card border rounded-lg">
                     <p className="text-sm text-muted-foreground">Total do Orçamento</p>
-                    <p className="text-3xl font-bold">R$ {formData.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    <p className="text-3xl font-bold">R$ {(formData.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                   </div>
                 </TabsContent>
 
@@ -575,11 +574,11 @@ export default function Orcamentos() {
             {filteredOrcamentos.map((orc) => (
               <TableRow key={orc.id}>
                 <TableCell className="font-medium">{orc.numero}</TableCell>
-                <TableCell>{orc.cliente}</TableCell>
-                <TableCell>{orc.kwp} kWp</TableCell>
-                <TableCell>{orc.placas} un.</TableCell>
-                <TableCell>{orc.estruturaSolo ? "Sim" : "Não"}</TableCell>
-                <TableCell>R$ {orc.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</TableCell>
+                <TableCell>{orc.cliente_nome}</TableCell>
+                <TableCell>{(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp</TableCell>
+                <TableCell>{orc.qtd_modulos} un.</TableCell>
+                <TableCell>{orc.estrutura_solo ? "Sim" : "Não"}</TableCell>
+                <TableCell>R$ {orc.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</TableCell>
                 <TableCell>{getStatusBadge(orc.status)}</TableCell>
                 <TableCell>{orc.validade}</TableCell>
                 <TableCell className="text-right">
@@ -604,7 +603,7 @@ export default function Orcamentos() {
           open={panelOpen}
           onClose={() => setPanelOpen(false)}
           title={selectedOrcamento.numero}
-          description={selectedOrcamento.cliente}
+          description={selectedOrcamento.cliente_nome || ""}
           tabs={[
             {
               id: "detalhes",
@@ -614,7 +613,7 @@ export default function Orcamentos() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Cliente</p>
-                      <p className="font-medium">{selectedOrcamento.cliente}</p>
+                      <p className="font-medium">{selectedOrcamento.cliente_nome}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Status</p>
@@ -622,42 +621,42 @@ export default function Orcamentos() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Sistema</p>
-                      <p className="font-medium">{selectedOrcamento.kwp} kWp ({selectedOrcamento.placas} placas)</p>
+                      <p className="font-medium">{((selectedOrcamento.qtd_modulos || 0) * (selectedOrcamento.potencia_modulo_w || 0) / 1000).toFixed(2)} kWp ({selectedOrcamento.qtd_modulos} placas)</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Validade</p>
-                      <p className="font-medium">{new Date(selectedOrcamento.validade).toLocaleDateString("pt-BR")}</p>
+                      <p className="font-medium">{selectedOrcamento.validade ? new Date(selectedOrcamento.validade).toLocaleDateString("pt-BR") : "N/A"}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Modelo da Placa</p>
-                      <p className="font-medium">{selectedOrcamento.modeloPlaca}</p>
+                      <p className="font-medium">{selectedOrcamento.modelo_modulo}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Inversor</p>
-                      <p className="font-medium">{selectedOrcamento.inversor}</p>
+                      <p className="font-medium">{selectedOrcamento.inversor_kw ? `${selectedOrcamento.inversor_kw} kW` : "N/A"}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Tipo de Telhado</p>
-                      <p className="font-medium">{selectedOrcamento.tipoTelhado}</p>
+                      <p className="font-medium">N/A</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Fase</p>
-                      <p className="font-medium">{selectedOrcamento.fase}</p>
+                      <p className="font-medium">N/A</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Estrutura Solo</p>
-                      <p className="font-medium">{selectedOrcamento.estruturaSolo ? "Sim" : "Não"}</p>
+                      <p className="font-medium">{selectedOrcamento.estrutura_solo ? "Sim" : "Não"}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Responsável</p>
-                      <p className="font-medium">{selectedOrcamento.dono}</p>
+                      <p className="font-medium">Sistema</p>
                     </div>
                   </div>
                   <div className="p-4 bg-card border rounded-lg">
                     <p className="text-sm text-muted-foreground">Valor Total</p>
-                    <p className="text-3xl font-bold">R$ {selectedOrcamento.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    <p className="text-3xl font-bold">R$ {selectedOrcamento.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                   </div>
-                  {selectedOrcamento.observacoes && (
+                  {false && (
                     <div>
                       <p className="text-sm text-muted-foreground mb-2">Observações</p>
                       <p className="text-sm">{selectedOrcamento.observacoes}</p>
@@ -677,7 +676,7 @@ export default function Orcamentos() {
                   {parametros.prazos.map((prazo) => {
                     const i = parametros.taxaJurosMes;
                     const n = prazo;
-                    const pv = selectedOrcamento.total;
+                    const pv = selectedOrcamento.valor_total;
                     const pmt = (pv * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1);
                     
                     return (

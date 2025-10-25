@@ -156,31 +156,30 @@ export default function CalculadoraAssinatura() {
       return;
     }
 
+    const now = new Date();
+    const numero = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
     addOrcamento({
-      cliente: resultado.clienteNome || "Cliente não informado",
-      conta: resultado.gastoMensalAtual,
-      consumo: resultado.consumoMensal,
-      kwp: 0,
-      placas: 0,
-      modeloPlaca: "Assinatura",
-      inversor: "N/A",
-      tipoTelhado: "N/A",
-      fase: "N/A",
-      estruturaSolo: false,
-      total: resultado.gastoMensalAssinatura * 12,
-      status: "Rascunho",
+      numero,
+      data: now.toISOString(),
       validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      dono: "Vendedor Atual",
-      precoBase: resultado.gastoMensalAssinatura * 12,
-      maoDeObra: 0,
-      frete: 0,
-      adicionais: 0,
-      desconto: 0,
-      markup: 1,
-      origem: "assinatura",
-      tipoCalculadora: "assinatura",
-      tarifaVenda: resultado.tarifaVenda,
-      economiaTotal15Anos: resultado.economiaTotal15Anos,
+      cliente_id: resultado.clienteId || null,
+      cliente_nome: resultado.clienteNome || "Cliente não informado",
+      geracao_kwh: resultado.consumoMensal || 0,
+      qtd_modulos: 0,
+      modelo_modulo: "Assinatura",
+      potencia_modulo_w: null,
+      inversor_kw: null,
+      valor_base: resultado.gastoMensalAssinatura * 12,
+      custo_estrutura_solo: 0,
+      valor_total: resultado.gastoMensalAssinatura * 12,
+      estrutura_solo: false,
+      parcela_selecionada: null,
+      prestacao: resultado.gastoMensalAssinatura,
+      economia_mensal: resultado.economiaMensal || 0,
+      economia_percentual: resultado.economiaPercentual || 0,
+      payback_meses: null,
+      status: "pendente"
     });
 
     toast.success("Orçamento de assinatura salvo!");

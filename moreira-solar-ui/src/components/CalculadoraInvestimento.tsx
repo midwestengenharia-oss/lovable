@@ -137,36 +137,30 @@ export default function CalculadoraInvestimento() {
       return;
     }
 
+    const now = new Date();
+    const numero = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
     addOrcamento({
-      cliente: resultado.clienteNome || "Cliente não informado",
-      conta: resultado.valorConta,
-      consumo: resultado.geracaoReal,
-      kwp: (resultado.qtdModulos * resultado.potenciaModulo) / 1000,
-      placas: resultado.qtdModulos,
-      modeloPlaca: resultado.modeloModulo,
-      inversor: `Inversor ${resultado.inversorKw}kW`,
-      tipoTelhado: "Não informado",
-      fase: "Não informado",
-      estruturaSolo: resultado.estruturaSolo,
-      total: resultado.valorTotal,
-      status: resultado.clienteId ? "Rascunho" : "Rascunho",
+      numero,
+      data: now.toISOString(),
       validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      dono: resultado.vendedor,
-      precoBase: resultado.valorBase,
-      maoDeObra: 0,
-      frete: 0,
-      adicionais: resultado.custoEstruturaSolo,
-      desconto: 0,
-      markup: 1,
-      origem: "calculadora",
-      tipoCalculadora: "investimento",
-      taxaCompraEnergia: parseFloat(taxaCompra),
-      prazoContrato: parseInt(prazoContrato),
-      roiPercentual: calculosInvestimento.roi,
-      paybackAnos: calculosInvestimento.payback,
-      receitaMensal: calculosInvestimento.receitaMensal,
-      receitaTotal: calculosInvestimento.receitaTotal,
-      tarifaVendaGC: calculosInvestimento.tarifaVendaGC,
+      cliente_id: resultado.clienteId || null,
+      cliente_nome: resultado.clienteNome || "Cliente não informado",
+      geracao_kwh: resultado.geracaoReal,
+      qtd_modulos: resultado.qtdModulos,
+      modelo_modulo: resultado.modeloModulo,
+      potencia_modulo_w: resultado.potenciaModulo,
+      inversor_kw: resultado.inversorKw,
+      valor_base: resultado.valorBase,
+      custo_estrutura_solo: resultado.custoEstruturaSolo || 0,
+      valor_total: resultado.valorTotal,
+      estrutura_solo: resultado.estruturaSolo,
+      parcela_selecionada: null,
+      prestacao: null,
+      economia_mensal: calculosInvestimento.receitaMensal || 0,
+      economia_percentual: null,
+      payback_meses: calculosInvestimento.payback ? Math.round(calculosInvestimento.payback * 12) : null,
+      status: "pendente"
     });
 
     toast.success("Orçamento de Investimento salvo com sucesso!");

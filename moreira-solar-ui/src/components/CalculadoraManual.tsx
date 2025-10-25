@@ -206,30 +206,30 @@ export default function CalculadoraManual() {
       return;
     }
 
+    const now = new Date();
+    const numero = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
     addOrcamento({
-      cliente: resultado.clienteNome || "Cliente não informado",
-      conta: resultado.valorConta,
-      consumo: resultado.geracaoReal,
-      kwp: (resultado.qtdModulos * resultado.potenciaModulo) / 1000,
-      placas: resultado.qtdModulos,
-      modeloPlaca: `Módulo ${resultado.potenciaModulo}W`,
-      inversor: `Inversor ${resultado.inversorKw}kW`,
-      tipoTelhado: "Não informado",
-      fase: "Não informado",
-      estruturaSolo: resultado.custoEstruturaSolo > 0,
-      total: resultado.valorTotal,
-      status: "Rascunho",
+      numero,
+      data: now.toISOString(),
       validade: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      dono: "Gestor/Admin",
-      precoBase: resultado.valorFinanciado,
-      maoDeObra: 0,
-      frete: 0,
-      adicionais: resultado.custoEstruturaSolo,
-      desconto: 0,
-      markup: 1,
-      origem: "manual",
-      tipoCalculadora: "manual",
-      observacoes: resultado.observacoes,
+      cliente_id: resultado.clienteId || null,
+      cliente_nome: resultado.clienteNome || "Cliente não informado",
+      geracao_kwh: resultado.geracaoReal,
+      qtd_modulos: resultado.qtdModulos,
+      modelo_modulo: `Módulo ${resultado.potenciaModulo}W`,
+      potencia_modulo_w: resultado.potenciaModulo,
+      inversor_kw: resultado.inversorKw,
+      valor_base: resultado.valorFinanciado,
+      custo_estrutura_solo: resultado.custoEstruturaSolo || 0,
+      valor_total: resultado.valorTotal,
+      estrutura_solo: resultado.custoEstruturaSolo > 0,
+      parcela_selecionada: null,
+      prestacao: null,
+      economia_mensal: null,
+      economia_percentual: null,
+      payback_meses: null,
+      status: "pendente"
     });
 
     toast.success("Orçamento salvo com sucesso!");
