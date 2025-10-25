@@ -12,6 +12,21 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
+// Helper para converter entrada brasileira (vírgula) para formato numérico
+const parseDecimalBR = (value: string): number => {
+  if (!value) return 0;
+  // Substitui vírgula por ponto e remove espaços
+  const normalized = value.replace(',', '.').trim();
+  const parsed = parseFloat(normalized);
+  return isNaN(parsed) ? 0 : parsed;
+};
+
+// Helper para formatar número para exibição (usando ponto)
+const formatDecimal = (value: number | undefined): string => {
+  if (value === undefined || value === null) return '';
+  return value.toString();
+};
+
 export default function Parametros() {
   const {
     equipamentos,
@@ -121,112 +136,112 @@ export default function Parametros() {
                   <Label htmlFor="taxaJurosMes">Taxa de Juros Mensal (%)</Label>
                   <Input
                     id="taxaJurosMes"
-                    type="number"
-                    step="0.01"
-                    value={params.taxaJurosMes * 100}
+                    type="text"
+                    value={formatDecimal(params.taxaJurosMes * 100)}
                     onChange={(e) =>
-                      setParams({ ...params, taxaJurosMes: parseFloat(e.target.value) / 100 || 0 })
+                      setParams({ ...params, taxaJurosMes: parseDecimalBR(e.target.value) / 100 })
                     }
+                    placeholder="2,00"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tarifaComercial">Tarifa Comercial (R$/kWh)</Label>
                   <Input
                     id="tarifaComercial"
-                    type="number"
-                    step="0.01"
-                    value={params.tarifaComercial}
+                    type="text"
+                    value={formatDecimal(params.tarifaComercial)}
                     onChange={(e) =>
-                      setParams({ ...params, tarifaComercial: parseFloat(e.target.value) || 0 })
+                      setParams({ ...params, tarifaComercial: parseDecimalBR(e.target.value) })
                     }
+                    placeholder="1,10"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="tusd">TUSD (R$/kWh)</Label>
                   <Input
                     id="tusd"
-                    type="number"
-                    step="0.01"
-                    value={params.tusd}
-                    onChange={(e) => setParams({ ...params, tusd: parseFloat(e.target.value) || 0 })}
+                    type="text"
+                    value={formatDecimal(params.tusd)}
+                    onChange={(e) => setParams({ ...params, tusd: parseDecimalBR(e.target.value) })}
+                    placeholder="0,30"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="te">TE (R$/kWh)</Label>
                   <Input
                     id="te"
-                    type="number"
-                    step="0.01"
-                    value={params.te}
-                    onChange={(e) => setParams({ ...params, te: parseFloat(e.target.value) || 0 })}
+                    type="text"
+                    value={formatDecimal(params.te)}
+                    onChange={(e) => setParams({ ...params, te: parseDecimalBR(e.target.value) })}
+                    placeholder="0,40"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="fioB">Fio B (R$/kWh)</Label>
                   <Input
                     id="fioB"
-                    type="number"
-                    step="0.01"
-                    value={params.fioB}
-                    onChange={(e) => setParams({ ...params, fioB: parseFloat(e.target.value) || 0 })}
+                    type="text"
+                    value={formatDecimal(params.fioB)}
+                    onChange={(e) => setParams({ ...params, fioB: parseDecimalBR(e.target.value) })}
+                    placeholder="0,05"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reajusteMedio">Reajuste Médio Anual (%)</Label>
                   <Input
                     id="reajusteMedio"
-                    type="number"
-                    step="0.01"
-                    value={params.reajusteMedio * 100}
+                    type="text"
+                    value={formatDecimal(params.reajusteMedio * 100)}
                     onChange={(e) =>
-                      setParams({ ...params, reajusteMedio: parseFloat(e.target.value) / 100 || 0 })
+                      setParams({ ...params, reajusteMedio: parseDecimalBR(e.target.value) / 100 })
                     }
+                    placeholder="8,00"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="geracaoKwp">Geração kWp (kWh/kWp/mês)</Label>
                   <Input
                     id="geracaoKwp"
-                    type="number"
-                    step="0.01"
-                    value={params.geracaoKwp}
+                    type="text"
+                    value={formatDecimal(params.geracaoKwp)}
                     onChange={(e) =>
-                      setParams({ ...params, geracaoKwp: parseFloat(e.target.value) || 0 })
+                      setParams({ ...params, geracaoKwp: parseDecimalBR(e.target.value) })
                     }
+                    placeholder="130"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="overLoad">Over Load</Label>
                   <Input
                     id="overLoad"
-                    type="number"
-                    step="0.01"
-                    value={params.overLoad}
-                    onChange={(e) => setParams({ ...params, overLoad: parseFloat(e.target.value) || 0 })}
+                    type="text"
+                    value={formatDecimal(params.overLoad)}
+                    onChange={(e) => setParams({ ...params, overLoad: parseDecimalBR(e.target.value) })}
+                    placeholder="1,35"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pisConfins">PIS/COFINS (%)</Label>
                   <Input
                     id="pisConfins"
-                    type="number"
-                    step="0.01"
-                    value={params.pisConfins * 100}
+                    type="text"
+                    value={formatDecimal(params.pisConfins * 100)}
                     onChange={(e) =>
-                      setParams({ ...params, pisConfins: parseFloat(e.target.value) / 100 || 0 })
+                      setParams({ ...params, pisConfins: parseDecimalBR(e.target.value) / 100 })
                     }
+                    placeholder="9,65"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="icms">ICMS (%)</Label>
                   <Input
                     id="icms"
-                    type="number"
-                    step="0.01"
-                    value={params.icms * 100}
+                    type="text"
+                    value={formatDecimal(params.icms * 100)}
                     onChange={(e) =>
-                      setParams({ ...params, icms: parseFloat(e.target.value) / 100 || 0 })
+                      setParams({ ...params, icms: parseDecimalBR(e.target.value) / 100 })
                     }
+                    placeholder="18,00"
                   />
                 </div>
                 <div className="space-y-2">
@@ -242,15 +257,15 @@ export default function Parametros() {
                   <Label htmlFor="adicionalEstrutSoloPorPlaca">Adicional Estrutura Solo (R$/placa)</Label>
                   <Input
                     id="adicionalEstrutSoloPorPlaca"
-                    type="number"
-                    step="0.01"
-                    value={params.adicionalEstrutSoloPorPlaca}
+                    type="text"
+                    value={formatDecimal(params.adicionalEstrutSoloPorPlaca)}
                     onChange={(e) =>
                       setParams({
                         ...params,
-                        adicionalEstrutSoloPorPlaca: parseFloat(e.target.value) || 0,
+                        adicionalEstrutSoloPorPlaca: parseDecimalBR(e.target.value),
                       })
                     }
+                    placeholder="250,00"
                   />
                 </div>
                 <div className="space-y-2">
@@ -266,35 +281,36 @@ export default function Parametros() {
                   <Label htmlFor="taxaCompraInvest">Taxa Compra - Investimento (R$/kWh)</Label>
                   <Input
                     id="taxaCompraInvest"
-                    type="number"
-                    step="0.01"
-                    value={params.taxaCompraEnergiaInvestimento}
+                    type="text"
+                    value={formatDecimal(params.taxaCompraEnergiaInvestimento)}
                     onChange={(e) =>
-                      setParams({ ...params, taxaCompraEnergiaInvestimento: parseFloat(e.target.value) || 0 })
+                      setParams({ ...params, taxaCompraEnergiaInvestimento: parseDecimalBR(e.target.value) })
                     }
+                    placeholder="0,65"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="prazoContratoInvest">Prazo Contrato - Investimento (anos)</Label>
                   <Input
                     id="prazoContratoInvest"
-                    type="number"
-                    value={params.prazoContratoInvestimento}
+                    type="text"
+                    value={formatDecimal(params.prazoContratoInvestimento)}
                     onChange={(e) =>
-                      setParams({ ...params, prazoContratoInvestimento: parseInt(e.target.value) || 0 })
+                      setParams({ ...params, prazoContratoInvestimento: Math.floor(parseDecimalBR(e.target.value)) })
                     }
+                    placeholder="15"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="descontoGC">Desconto Venda GC (%)</Label>
                   <Input
                     id="descontoGC"
-                    type="number"
-                    step="0.01"
-                    value={params.descontoVendaGC * 100}
+                    type="text"
+                    value={formatDecimal(params.descontoVendaGC * 100)}
                     onChange={(e) =>
-                      setParams({ ...params, descontoVendaGC: parseFloat(e.target.value) / 100 || 0 })
+                      setParams({ ...params, descontoVendaGC: parseDecimalBR(e.target.value) / 100 })
                     }
+                    placeholder="20,00"
                   />
                 </div>
               </div>
