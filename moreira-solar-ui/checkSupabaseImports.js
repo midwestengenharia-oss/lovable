@@ -33,12 +33,10 @@ function searchFiles(dir) {
     return results;
 }
 
-console.log("🔎 Verificando imports e instâncias Supabase...\n");
 
 const matches = searchFiles(projectDir);
 
 if (matches.length === 0) {
-    console.log("✅ Nenhuma referência suspeita encontrada!");
 } else {
     const grouped = matches.reduce((acc, m) => {
         acc[m.file] = acc[m.file] || [];
@@ -47,9 +45,7 @@ if (matches.length === 0) {
     }, {});
 
     for (const [file, patterns] of Object.entries(grouped)) {
-        console.log(`📂 ${file}`);
         for (const p of patterns) console.log(`   → ${p}`);
     }
 }
 
-console.log("\n🧩 Revisar: todos os imports devem vir de '@/integrations/supabase/client'");

@@ -15,12 +15,117 @@ import { useEquipamentos } from "@/hooks/useEquipamentos";
 import { useParametros } from "@/hooks/useParametros";
 import { useProjetos } from "@/hooks/useProjetos";
 import { Plus, Search, Pencil, Trash2, Info } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { ViewToggle } from "@/components/kanban/ViewToggle";
 import { KanbanBoard, KanbanColumnData } from "@/components/kanban/KanbanBoard";
 import { KanbanCardData } from "@/components/kanban/KanbanCard";
 import { SidePanel } from "@/components/panels/SidePanel";
 import type { DropResult } from "@hello-pangea/dnd";
+import { supabase } from "@/integrations/supabase/client";
+
+function isUUID(v?: string | null) {
+  return !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+async function criarProjetoAPartirDoOrcamento(orc: Orcamento) {
+  // 1) Usuário (RLS do INSERT exige user_id = auth.uid())
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr) throw authErr;
+  if (!user) throw new Error("Faça login para criar o projeto.");
+
+  // 2) Board e coluna 'inventario'
+  const { data: board, error: bErr } = await supabase
+    .from("kanban_board")
+    .select("id")
+    .eq("slug", "obra")
+    .maybeSingle();
+  if (bErr) throw bErr;
+  if (!board) throw new Error("Board 'obra' não encontrado.");
+
+  // tenta 'inventario'; se não existir, usa a 1ª coluna
+  let toColumnId: string | null = null;
+  let toKey = "inventario";
+
+  const { data: colInv } = await supabase
+    .from("kanban_column")
+    .select("id,key")
+    .eq("board_id", board.id)
+    .eq("key", "inventario")
+    .maybeSingle();
+
+  if (colInv?.id) {
+    toColumnId = colInv.id;
+    toKey = colInv.key;
+  } else {
+    const { data: firstCol, error: cErr } = await supabase
+      .from("kanban_column")
+      .select("id,key")
+      .eq("board_id", board.id)
+      .order("ord")
+      .limit(1)
+      .maybeSingle();
+    if (cErr) throw cErr;
+    if (!firstCol) throw new Error("Nenhuma coluna encontrada no board.");
+    toColumnId = firstCol.id;
+    toKey = firstCol.key;
+  }
+
+  // 3) número do projeto
+  const now = new Date();
+  const numeroProjeto = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+    now.getDate()
+  ).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(
+    now.getSeconds()
+  ).padStart(2, "0")}`;
+
+  // 4) payload
+  const kwp = ((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000;
+
+  const payload: any = {
+    numero: numeroProjeto,
+    nome: orc.cliente_nome || orc.numero,
+    cliente_id: orc.cliente_id || null,
+    cliente_nome: orc.cliente_nome || "",
+    orcamento_id: orc.id,
+    kwp,
+    // só grava responsavel_id se for um UUID válido (evita FK inválida)
+    responsavel_id: isUUID((orc as any).vendedor_id) ? (orc as any).vendedor_id : null,
+    user_id: user.id,                    // ✅ RLS (INSERT) exige isso
+    status: toKey,                       // ✅ igual à key da coluna
+    kanban_column_id: toColumnId,        // ✅ garante aparecer no Kanban imediatamente
+    proximos_passos: "Realizar vistoria técnica no local",
+    data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10), // date
+    prioridade: "Média",
+    progresso: 0,
+    checklist: [
+      { id: "c1", titulo: "Solicitar documentação do cliente", concluido: false },
+      { id: "c2", titulo: "Realizar vistoria técnica", concluido: false },
+      { id: "c3", titulo: "Elaborar projeto elétrico", concluido: false },
+      { id: "c4", titulo: "Registrar ART", concluido: false },
+      { id: "c5", titulo: "Solicitar homologação", concluido: false },
+    ],
+    documentos: [],
+    custos: { orcado: orc.valor_total, real: 0, itens: [] },
+    timeline: [
+      {
+        id: `t-${Date.now()}`,
+        data: new Date().toISOString(),
+        titulo: "Projeto Iniciado",
+        descricao: "Orçamento aprovado e projeto criado",
+      },
+    ],
+  };
+
+  // 5) insert
+  const { data: proj, error: pErr } = await supabase
+    .from("projetos")
+    .insert(payload)
+    .select("id, numero, kanban_column_id, status")
+    .single();
+  if (pErr) throw pErr;
+
+  return proj;
+}
 
 export default function Orcamentos() {
   const { orcamentos, isLoading, addOrcamento, updateOrcamento, deleteOrcamento } = useOrcamentos();
@@ -223,52 +328,36 @@ export default function Orcamentos() {
     updateOrcamento({ id: orcamento.id, status: destStatus });
   };
 
-  const handleAprovarOrcamento = (orc: Orcamento) => {
-    updateOrcamento({ id: orc.id, status: "Aprovado" });
-    const now = new Date();
-    const numeroProjeto = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+  const handleAprovarOrcamento = async (orc: Orcamento) => {
+    try {
+      // evita recriar se já existe projeto vinculado (opcional: cheque por orcamento_id)
+      const { data: exists, error: qErr } = await supabase
+        .from("projetos")
+        .select("id")
+        .eq("orcamento_id", orc.id)
+        .maybeSingle();
+      if (qErr) throw qErr;
+      if (exists?.id) {
+        toast.info("Este orçamento já gerou um projeto.");
+        // ainda assim marca Aprovado
+        await updateOrcamento({ id: orc.id, status: "Aprovado" });
+        return;
+      }
 
-    addProjeto({
-      cliente_id: orc.cliente_id || null, // <-- ✅ inclui o cliente_id
-      cliente_nome: orc.cliente_nome || "",
-      nome: orc.cliente_nome,
-      numero: numeroProjeto,
-      orcamento_id: orc.id,
-      kwp: ((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000,
-      responsavel_id: orc.vendedor_id || null,
-      status: "Vistoria",
-      proximos_passos: "Realizar vistoria técnica no local",
-      data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0],
-      prioridade: "Média",
-      progresso: 0,
-      checklist: [
-        { id: "c1", titulo: "Solicitar documentação do cliente", concluido: false },
-        { id: "c2", titulo: "Realizar vistoria técnica", concluido: false },
-        { id: "c3", titulo: "Elaborar projeto elétrico", concluido: false },
-        { id: "c4", titulo: "Registrar ART", concluido: false },
-        { id: "c5", titulo: "Solicitar homologação", concluido: false },
-      ],
-      documentos: [],
-      custos: {
-        orcado: orc.valor_total,
-        real: 0,
-        itens: [],
-      },
-      timeline: [
-        {
-          id: `t-${Date.now()}`,
-          data: new Date().toISOString(),
-          titulo: "Projeto Iniciado",
-          descricao: "Orçamento aprovado e projeto criado",
-        },
-      ],
-    });
+      // 1) marca orçamento como Aprovado
+      await updateOrcamento({ id: orc.id, status: "Aprovado" });
 
-    toast.success("Orçamento aprovado e projeto criado!");
-    setPanelOpen(false);
+      // 2) cria projeto já na coluna correta
+      const proj = await criarProjetoAPartirDoOrcamento(orc);
+
+      toast.success(`Orçamento aprovado! Projeto ${proj.numero} criado.`);
+      setPanelOpen(false);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Falha ao aprovar orçamento/criar projeto.");
+    }
   };
+
 
 
   const kanbanColumns: KanbanColumnData[] = [

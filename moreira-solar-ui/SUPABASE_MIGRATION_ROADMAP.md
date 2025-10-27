@@ -1242,7 +1242,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Setup auth listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event);
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -2005,7 +2004,6 @@ export const useLeadsRealtime = () => {
           table: 'leads',
         },
         (payload) => {
-          console.log('Lead atualizado em tempo real:', payload);
           
           // Invalidar cache para forçar refetch
           queryClient.invalidateQueries({ queryKey: ['leads'] });

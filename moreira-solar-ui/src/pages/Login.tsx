@@ -33,7 +33,6 @@ export default function Login() {
           email: user.email,
         };
         sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
-        console.log("🔁 Sessão restaurada e salva no sessionStorage:", usuario_logado);
       }
     };
     restaurarSessao();
@@ -78,7 +77,6 @@ export default function Login() {
 
           // ✅ Salva no sessionStorage
           sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
-          console.log("✅ Usuário salvo no sessionStorage:", usuario_logado);
         } else {
           console.warn("⚠️ Nenhum usuário retornado da sessão Supabase.");
         }

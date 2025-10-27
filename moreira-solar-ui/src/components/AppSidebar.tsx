@@ -14,6 +14,8 @@ import {
   Users2,
   FileSpreadsheet,
   LogOut,
+  Columns3,
+  ListChecks,
 } from "lucide-react";
 import {
   Sidebar,
@@ -29,9 +31,10 @@ import {
 } from "@/components/ui/sidebar";
 import { useTheme } from "@/contexts/ThemeContext";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import logoMoreiraLight from "@/assets/logo-moreira.png";
 import logoMoreiraDark from "@/assets/logo-moreira-branco.png";
+import { useEffect, useState } from "react";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -48,13 +51,39 @@ const menuItems = [
   { title: "Parâmetros", url: "/parametros", icon: Settings },
 ];
 
+// 👇 Itens de administração do Kanban
+const adminItems = [
+  { title: "Kanban (Admin)", url: "/admin/kanban", icon: Columns3 },
+  { title: "Form. da Fase", url: "/admin/kanban/forms", icon: ListChecks },
+];
+
 export function AppSidebar() {
   const { open } = useSidebar();
   const { theme } = useTheme();
   const navigate = useNavigate();
   const logo = theme === "dark" ? logoMoreiraDark : logoMoreiraLight;
 
-  // 🔒 Função de logout
+  // (opcional) só mostrar Admin para gestor/admin
+  const [showAdmin, setShowAdmin] = useState<boolean>(true); // deixe true se quiser sempre visível
+
+  useEffect(() => {
+    // Se quiser habilitar a checagem de papel, troque para false por padrão
+    // e descomente o bloco abaixo.
+    // setShowAdmin(false);
+    // (async () => {
+    //   const { data: { user } } = await supabase.auth.getUser();
+    //   if (!user) return;
+    //   const { data } = await supabase
+    //     .from("profiles")
+    //     .select("perfil")
+    //     .eq("id", user.id)
+    //     .maybeSingle();
+    //   if (data?.perfil === "gestor" || data?.perfil === "admin") {
+    //     setShowAdmin(true);
+    //   }
+    // })();
+  }, []);
+
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -72,8 +101,8 @@ export function AppSidebar() {
       className="border-r border-border bg-sidebar text-sidebar-foreground transition-colors"
     >
       <SidebarContent>
+        {/* Cabeçalho */}
         <SidebarGroup>
-          {/* Cabeçalho */}
           <SidebarGroupLabel className="text-lg font-bold flex items-center justify-center px-4 py-6">
             {open ? (
               <img
@@ -86,7 +115,7 @@ export function AppSidebar() {
             )}
           </SidebarGroupLabel>
 
-          {/* Itens do menu */}
+          {/* Menus principais */}
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
@@ -110,12 +139,40 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Grupo Admin (Kanban) */}
+        {showAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild>
+                      <NavLink
+                        to={item.url}
+                        end
+                        className={({ isActive }) =>
+                          isActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                            : "hover:bg-sidebar-accent/50 transition-colors"
+                        }
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
-      {/* Rodapé com perfil e logout */}
+      {/* Rodapé */}
       <SidebarFooter>
         <SidebarMenu>
-          {/* Link para o perfil */}
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
               <NavLink
@@ -132,7 +189,6 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
 
-          {/* 🔴 Botão de logout */}
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={handleLogout}

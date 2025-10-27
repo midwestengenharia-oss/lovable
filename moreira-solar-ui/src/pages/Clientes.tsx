@@ -16,12 +16,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { customAlphabet } from 'nanoid/non-secure';
-
+import { customAlphabet } from "nanoid/non-secure";
 
 export default function Clientes() {
   const { clientes } = useClientes();
-  const [view, setView] = useState<"lista" | "cards">("lista");
+  const listaClientes = clientes ?? [];
+
+  const [view, setView] = useState<"lista" | "cards">("cards");
   const [searchTerm, setSearchTerm] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -33,7 +34,6 @@ export default function Clientes() {
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [isInviting, setIsInviting] = useState(false);
 
-
   useEffect(() => {
     async function carregarVendedores() {
       const map = await getVendedoresMap();
@@ -42,38 +42,49 @@ export default function Clientes() {
     carregarVendedores();
   }, []);
 
-  const clientesFiltrados = clientes.filter((cliente) => {
-    const matchesSearch =
-      cliente.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cliente.cpf_cnpj?.includes(searchTerm) ||
-      cliente.telefone.includes(searchTerm);
+  // ===== Helpers =====
+  const searchTermLower = searchTerm.toLowerCase();
 
-    const tipo =
-      cliente.tipo_pessoa ||
-      (cliente.cpf_cnpj && cliente.cpf_cnpj.replace(/\D/g, "").length <= 11 ? "PF" : "PJ");
+  function getTipo(cliente: Cliente): "PF" | "PJ" {
+    if (cliente.tipo_pessoa === "PF" || cliente.tipo_pessoa === "PJ") return cliente.tipo_pessoa;
+    const digits = cliente.cpf_cnpj?.replace(/\D/g, "") ?? "";
+    return digits.length <= 11 ? "PF" : "PJ";
+  }
+
+  const getInitials = (name?: string) =>
+    (name || "—")
+      .split(" ")
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+
+  // ===== Filtro =====
+  const clientesFiltrados = listaClientes.filter((cliente) => {
+    const matchesSearch =
+      cliente.nome?.toLowerCase().includes(searchTermLower) ||
+      cliente.cpf_cnpj?.includes(searchTerm) ||
+      cliente.telefone?.includes(searchTerm);
+
+    const tipo = getTipo(cliente);
 
     const matchesTipo =
       tipoFiltro === "todos" ||
       (tipoFiltro === "pf" && tipo === "PF") ||
       (tipoFiltro === "pj" && tipo === "PJ");
 
-    return matchesSearch && matchesTipo;
+    return !!matchesSearch && matchesTipo;
   });
 
+  // ===== KPIs =====
   const kpis = {
-    total: clientes.length,
-    pf: clientes.filter(
-      (c) =>
-        c.tipo_pessoa === "PF" ||
-        (!c.tipo_pessoa && c.cpf_cnpj && c.cpf_cnpj.replace(/\D/g, "").length <= 11)
-    ).length,
-    pj: clientes.filter(
-      (c) =>
-        c.tipo_pessoa === "PJ" ||
-        (!c.tipo_pessoa && c.cpf_cnpj && c.cpf_cnpj.replace(/\D/g, "").length > 11)
-    ).length,
+    total: listaClientes.length,
+    pf: listaClientes.filter((c) => getTipo(c) === "PF").length,
+    pj: listaClientes.filter((c) => getTipo(c) === "PJ").length,
   };
 
+  // ===== Ações =====
   const handleNew = () => {
     setEditingCliente(null);
     setDialogOpen(true);
@@ -94,14 +105,6 @@ export default function Clientes() {
     setInviteDialogOpen(true);
   };
 
-  const getInitials = (name: string) =>
-    name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-
   const podeEditar = true;
 
   // ✅ Envio de convite via WhatsApp (n8n)
@@ -118,16 +121,13 @@ export default function Clientes() {
       setIsInviting(true);
 
       // 🔐 Token alfanumérico puro (sem _ nem -)
-      const gerarToken = customAlphabet(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-        32
-      );
+      const gerarToken = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 32);
       const token = gerarToken();
 
       // Expiração em 7 dias
       const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-      // 🔗 Link direto para cadastro (sem encode, pois não há caracteres especiais)
+      // 🔗 Link direto para cadastro
       const linkCadastro = `${window.location.origin}/cadastroCliente?token=${token}`;
 
       // 🧩 Atualiza cliente no Supabase
@@ -172,14 +172,11 @@ export default function Clientes() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Clientes</h1>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setView(view === "lista" ? "cards" : "lista")}
-          >
+          <Button variant="outline" size="icon" onClick={() => setView(view === "lista" ? "cards" : "lista")}>
             {view === "lista" ? <Grid3X3 className="h-4 w-4" /> : <List className="h-4 w-4" />}
           </Button>
           <Button onClick={handleNew}>
@@ -244,7 +241,7 @@ export default function Clientes() {
         </CardContent>
       </Card>
 
-      {/* Tabela */}
+      {/* Lista (tabela) */}
       {view === "lista" && (
         <Card>
           <CardContent className="p-0">
@@ -275,13 +272,9 @@ export default function Clientes() {
                     <TableCell>{cliente.cpf_cnpj || "-"}</TableCell>
                     <TableCell>{cliente.telefone || "-"}</TableCell>
                     <TableCell>{cliente.email || "-"}</TableCell>
-                    <TableCell>
-                      {cliente.cidade && cliente.estado ? `${cliente.cidade}/${cliente.estado}` : "-"}
-                    </TableCell>
+                    <TableCell>{cliente.cidade && cliente.estado ? `${cliente.cidade}/${cliente.estado}` : "-"}</TableCell>
                     <TableCell>{vendedoresMap[cliente.user_id] || "—"}</TableCell>
-                    <TableCell>
-                      {new Date(cliente.data_cadastro || Date.now()).toLocaleDateString("pt-BR")}
-                    </TableCell>
+                    <TableCell>{new Date(cliente.data_cadastro || Date.now()).toLocaleDateString("pt-BR")}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleInvite(cliente)}>
@@ -305,6 +298,76 @@ export default function Clientes() {
         </Card>
       )}
 
+      {/* Cards (grid simples) */}
+      {view === "cards" && (
+        <>
+          {clientesFiltrados.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">
+                Nenhum cliente encontrado.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+              {clientesFiltrados.map((cliente) => {
+                const tipo = getTipo(cliente);
+                return (
+                  <Card key={cliente.id} className="flex flex-col">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Avatar className="h-9 w-9">
+                            <AvatarFallback className="text-xs">{getInitials(cliente.nome)}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <CardTitle className="text-base truncate">{cliente.nome}</CardTitle>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {cliente.cidade && cliente.estado ? `${cliente.cidade}/${cliente.estado}` : "—"}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge variant="secondary">{tipo}</Badge>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="flex-1">
+                      <div className="grid grid-cols-1 gap-1 text-xs text-muted-foreground">
+                        <div><span className="font-medium">CPF/CNPJ: </span>{cliente.cpf_cnpj || "—"}</div>
+                        <div><span className="font-medium">Telefone: </span>{cliente.telefone || "—"}</div>
+                        <div><span className="font-medium">Email: </span>{cliente.email || "—"}</div>
+                        <div>
+                          <span className="font-medium">Vendedor: </span>
+                          {vendedoresMap[cliente.user_id] || "—"}
+                        </div>
+                        <div>
+                          <span className="font-medium">Cadastro: </span>
+                          {new Date(cliente.data_cadastro || Date.now()).toLocaleDateString("pt-BR")}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleInvite(cliente)}>
+                          <Mail className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleView(cliente)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {podeEditar && (
+                          <Button variant="ghost" size="icon" onClick={() => handleEdit(cliente)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Dialog create/edit */}
       <ClienteDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
@@ -312,6 +375,7 @@ export default function Clientes() {
         mode={editingCliente ? "edit" : "create"}
       />
 
+      {/* Painel lateral */}
       <ClienteDetailPanel cliente={selectedCliente} open={panelOpen} onClose={() => setPanelOpen(false)} />
 
       {/* Diálogo de convite */}
@@ -320,6 +384,8 @@ export default function Clientes() {
           <DialogHeader>
             <DialogTitle>Enviar Convite</DialogTitle>
           </DialogHeader>
+        </DialogContent>
+        <DialogContent>
           <div className="space-y-4 py-2">
             <div>
               <Label>Cliente</Label>

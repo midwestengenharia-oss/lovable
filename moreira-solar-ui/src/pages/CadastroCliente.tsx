@@ -47,7 +47,6 @@ export default function CadastroCliente() {
                 return;
             }
 
-            console.log("👤 Dados do cliente recebidos:", data);
 
             const expiracao = new Date(data.convite_expira_em);
             if (new Date() > expiracao) {
@@ -91,8 +90,6 @@ export default function CadastroCliente() {
 
             // 🔐 Gerar hash da senha
             const senhaHash = await bcrypt.hash(senha, 10);
-            console.log("🔐 Hash gerado:", senhaHash);
-            console.log("📝 ID do cliente:", cliente.id);
 
             const { data, error } = await supabase
                 .from("clientes")
@@ -104,13 +101,7 @@ export default function CadastroCliente() {
                 })
                 .eq("id", cliente.id)
                 .select(); // ← ADICIONE .select() para retornar os dados atualizados
-            console.log("🔍 Dados antes do update:", {
-                id: cliente.id,
-                convite_token: cliente.convite_token,
-                convite_aceito: cliente.convite_aceito,
-                senhaHashLength: senhaHash.length
-            });
-            console.log("✅ Resultado do update:", { data, error }); // ← Debug
+
 
             if (error) {
                 console.error("❌ Erro no update:", error);

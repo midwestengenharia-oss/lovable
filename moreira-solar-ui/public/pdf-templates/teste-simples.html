@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        .page {
+            width: 210mm;
+            height: 297mm;
+            background: white;
+            page-break-after: always;
+            padding: 40px;
+            box-sizing: border-box;
+        }
+
+        .page:last-child {
+            page-break-after: auto;
+        }
+
+        h1 {
+            color: red;
+            font-size: 40px;
+        }
+
+        h2 {
+            color: blue;
+            font-size: 30px;
+        }
+
+        p {
+            font-size: 20px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page">
+        <h1>PÁGINA 1 - TESTE</h1>
+        <p>Cliente: CLIENTE_NOME_AQUI</p>
+        <p>Parcelas: PARCELAS_AQUI</p>
+        <p>Esta é a primeira página do teste.</p>
+        <p style="margin-top: 100px; font-size: 60px; text-align: center;">🌞</p>
+    </div>
+
+    <div class="page">
+        <h2>PÁGINA 2 - TESTE</h2>
+        <p>Economia: ECONOMIA_MENSAL_AQUI</p>
+        <p>Esta é a segunda página do teste.</p>
+        <p style="margin-top: 100px; font-size: 60px; text-align: center;">✅</p>
+    </div>
+</body>
+
+</html>

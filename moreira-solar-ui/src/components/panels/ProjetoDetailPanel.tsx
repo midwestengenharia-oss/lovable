@@ -1,21 +1,174 @@
-import { useState } from "react";
-import { SidePanel } from "./SidePanel";
-import { Projeto } from "@/contexts/AppContext";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { FileUpload } from "@/components/shared/FileUpload";
-import { Timeline } from "@/components/shared/Timeline";
-import { CheckCircle2, Clock, AlertCircle, TrendingUp } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { toast } from "@/components/ui/sonner";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-interface ProjetoDetailPanelProps {
-  projeto: Projeto | null;
-  open: boolean;
-  onClose: () => void;
-  onUpdate: (id: string, data: Partial<Projeto>) => void;
-  onConcluir?: (projeto: Projeto) => void;
+/* ============================= Types ============================= */
+
+type Projeto = any;
+
+type StageField = {
+  id: string;
+  board_id: string;
+  column_id: string;
+  ord: number;
+  key: string;
+  label: string;
+  type:
+  | "text"
+  | "textarea"
+  | "number"
+  | "date"
+  | "select"
+  | "radio"
+  | "checkbox"
+  | "boolean"
+  | "file";
+  required: boolean;
+  options: any[];
+  helper?: string | null;
+  active: boolean;
+};
+
+type StageValue = {
+  project_id: string;
+  field_id: string;
+  value: any;
+  updated_by?: string | null;
+  updated_at?: string;
+};
+
+type Column = { id: string; title: string; key: string };
+
+/* ============================= Helpers ============================= */
+
+const BUCKET = "kanban_uploads";
+
+const slugify = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const normalizeOptions = (options: any): { label: string; value: string }[] => {
+  if (!Array.isArray(options)) return [];
+  return options.map((o: any) =>
+    typeof o === "string" ? { label: o, value: slugify(o) } : { label: String(o.label ?? o.value), value: String(o.value ?? o.label) }
+  );
+};
+
+async function handleFileUpload(field: StageField, file: File, projetoId: string) {
+  const path = `${projetoId}/${field.key}/${Date.now()}-${file.name}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+  if (error) throw error;
+
+  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
+  return {
+    path,
+    url: pub?.publicUrl,
+    name: file.name,
+    size: file.size,
+    type: file.type,
+  };
 }
+
+async function handleFileRemove(current: any) {
+  if (!current?.path) return;
+  const { error } = await supabase.storage.from(BUCKET).remove([current.path]);
+  if (error) throw error;
+}
+
+/* pretty print para valores do histórico */
+function prettyValue(v: any) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "object") {
+    // metadado de arquivo
+    if (v.url && v.name) return v.name;
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+/* ============================= Queries ============================= */
+
+function useStageFields(columnId?: string) {
+  return useQuery({
+    enabled: !!columnId,
+    queryKey: ["stage", "fields", columnId],
+    queryFn: async (): Promise<StageField[]> => {
+      const { data, error } = await supabase
+        .from("stage_field")
+        .select("*")
+        .eq("column_id", columnId!)
+        .eq("active", true)
+        .order("ord");
+      if (error) throw error;
+      return data as any;
+    },
+  });
+}
+
+function useStageValues(projectId?: string, fieldIds?: string[]) {
+  return useQuery({
+    enabled: !!projectId && !!fieldIds?.length,
+    queryKey: ["stage", "values", projectId, fieldIds?.join(",")],
+    queryFn: async (): Promise<StageValue[]> => {
+      const { data, error } = await supabase
+        .from("stage_value")
+        .select("*")
+        .eq("project_id", projectId!)
+        .in("field_id", fieldIds!);
+      if (error) throw error;
+      return data as any;
+    },
+  });
+}
+
+function useTransitions(fromColumnId?: string) {
+  return useQuery({
+    enabled: !!fromColumnId,
+    queryKey: ["kanban", "transitions-from", fromColumnId],
+    queryFn: async (): Promise<Column[]> => {
+      const { data, error } = await supabase
+        .from("kanban_transition")
+        .select("to:to_column_id ( id, title, key )")
+        .eq("from_column_id", fromColumnId!);
+      if (error) throw error;
+      return (data || []).map((t: any) => t.to) as Column[];
+    },
+  });
+}
+
+function useHistory(projectId?: string) {
+  return useQuery({
+    enabled: !!projectId,
+    queryKey: ["projeto", "historico", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projeto_event")
+        .select("*, from:from_column_id(title), to:to_column_id(title)")
+        .eq("projeto_id", projectId!)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data || []) as any[];
+    },
+  });
+}
+
+/* ============================= Component ============================= */
 
 export function ProjetoDetailPanel({
   projeto,
@@ -23,278 +176,456 @@ export function ProjetoDetailPanel({
   onClose,
   onUpdate,
   onConcluir,
-}: ProjetoDetailPanelProps) {
-  if (!projeto) return null;
+}: {
+  projeto: Projeto;
+  open: boolean;
+  onClose: () => void;
+  onUpdate: (id: string, data: any) => void;
+  onConcluir: (p: Projeto) => void;
+}) {
+  const qc = useQueryClient();
+  const columnId = projeto?.kanban_column_id as string | undefined;
 
-  const toggleChecklistItem = (itemId: string) => {
-    if (!projeto.checklist) return;
+  /* campos e valores da fase */
+  const { data: fields = [], isLoading: loadingFields } = useStageFields(columnId);
+  const fieldIds = useMemo(() => fields.map((f) => f.id), [fields]);
+  const { data: values = [] } = useStageValues(projeto?.id, fieldIds);
 
-    const updatedChecklist = projeto.checklist.map((item) =>
-      item.id === itemId ? { ...item, concluido: !item.concluido } : item
-    );
-    onUpdate(projeto.id, { checklist: updatedChecklist });
+  const valueByField = useMemo(() => {
+    const m = new Map<string, any>();
+    values.forEach((v) => m.set(v.field_id, v.value));
+    return m;
+  }, [values]);
 
-    // Atualiza progresso automaticamente
-    const concluidos = updatedChecklist.filter((i) => i.concluido).length;
-    const progresso = Math.round(
-      (concluidos / updatedChecklist.length) * 100
-    );
-    onUpdate(projeto.id, { progresso });
-  };
+  const [local, setLocal] = useState<Record<string, any>>({});
+  useEffect(() => {
+    const initial: Record<string, any> = {};
+    fields.forEach((f) => (initial[f.id] = valueByField.get(f.id) ?? null));
+    setLocal(initial);
+  }, [fields, valueByField]);
 
-  const getStatusIcon = () => {
-    if (projeto.progresso === 100)
-      return <CheckCircle2 className="h-5 w-5 text-green-500" />;
-    if (projeto.progresso > 50)
-      return <TrendingUp className="h-5 w-5 text-blue-500" />;
-    if (projeto.prioridade === "Alta")
-      return <AlertCircle className="h-5 w-5 text-red-500" />;
-    return <Clock className="h-5 w-5 text-yellow-500" />;
-  };
+  const setValue = (field: StageField, v: any) =>
+    setLocal((prev) => ({ ...prev, [field.id]: v }));
 
-  const getPrioridadeBadge = () => {
-    const variants = {
-      Baixa: "outline",
-      Média: "secondary",
-      Alta: "destructive",
-    } as const;
-    return <Badge variant={variants[projeto.prioridade]}>{projeto.prioridade}</Badge>;
-  };
+  /* transições */
+  const { data: toColumns = [] } = useTransitions(columnId);
 
-  const tabs = [
-    {
-      id: "detalhes",
-      label: "Detalhes",
-      content: (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            {getStatusIcon()}
-            <div className="flex-1">
-              <h3 className="font-semibold text-lg">
-                {projeto.cliente_nome ?? "Cliente não informado"}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Orçamento: {projeto.orcamento_numero ?? "Não informado"}
-              </p>
-            </div>
-            {getPrioridadeBadge()}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
-            <div>
-              <p className="text-sm text-muted-foreground">kWp</p>
-              <p className="font-semibold">{projeto.kwp ?? 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Responsável</p>
-              <p className="font-semibold">
-                {projeto.responsavel_id ?? "Não definido"}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Prazo</p>
-              <p className="font-semibold">
-                {projeto.data_conclusao_prevista ?? "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Progresso</p>
-              <p className="font-semibold">{projeto.progresso ?? 0}%</p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-2">Status Atual</p>
-            <Badge variant="outline" className="text-sm">
-              {projeto.status ?? "Sem status"}
-            </Badge>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-2">Próximos Passos</p>
-            <p className="text-sm text-muted-foreground">
-              {projeto.proximos_passos ?? "Nenhum registrado"}
-            </p>
-          </div>
-
-          {projeto.status === "Entrega" && onConcluir && (
-            <Button onClick={() => onConcluir(projeto)} className="w-full" size="lg">
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Concluir Obra
-            </Button>
-          )}
-        </div>
-      ),
+  /* salvar */
+  const saveValues = useMutation({
+    mutationFn: async () => {
+      const rows: StageValue[] = Object.keys(local).map((fid) => ({
+        project_id: projeto.id,
+        field_id: fid,
+        value: local[fid],
+      }));
+      if (!rows.length) return;
+      const { error } = await supabase.from("stage_value").upsert(rows);
+      if (error) throw error;
     },
-    {
-      id: "checklist",
-      label: "Checklist",
-      content: (
-        <div className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium">Progresso Geral</p>
-              <p className="text-sm text-muted-foreground">
-                {projeto.progresso ?? 0}%
-              </p>
-            </div>
-            <Progress value={projeto.progresso ?? 0} />
-          </div>
+    onSuccess: async () => {
+      toast.success("Dados salvos");
+      await qc.invalidateQueries({ queryKey: ["stage", "values", projeto?.id] });
+      await qc.invalidateQueries({ queryKey: ["projeto", "historico", projeto?.id] });
+    },
+  });
 
-          <div className="space-y-3">
-            {projeto.checklist?.length ? (
-              projeto.checklist.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-3 p-3 rounded-lg border"
-                >
-                  <Checkbox
-                    checked={item.concluido}
-                    onCheckedChange={() => toggleChecklistItem(item.id)}
-                    className="mt-0.5"
-                  />
-                  <label
-                    className={`flex-1 text-sm cursor-pointer ${item.concluido ? "line-through text-muted-foreground" : ""
-                      }`}
-                    onClick={() => toggleChecklistItem(item.id)}
-                  >
-                    {item.titulo}
-                  </label>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Nenhum item no checklist
-              </p>
-            )}
-          </div>
-        </div>
-      ),
+  /* mover */
+  const move = useMutation({
+    mutationFn: async (toCol: string) => {
+      const { error } = await supabase.rpc("fn_move_projeto", {
+        p_projeto_id: projeto.id,
+        p_to_column_id: toCol,
+      });
+      if (error) throw error;
     },
-    {
-      id: "documentos",
-      label: "Documentos",
-      content: (
-        <div className="space-y-4">
-          <FileUpload
-            files={projeto.documentos || []}
-            onFilesChange={(files) =>
-              onUpdate(projeto.id, { documentos: files })
-            }
-            accept="*"
-            maxFiles={20}
-            showGallery={true}
-          />
-        </div>
-      ),
+    onSuccess: async () => {
+      toast.success("Movido com sucesso");
+      await qc.invalidateQueries();
+      onClose();
     },
-    {
-      id: "timeline",
-      label: "Timeline",
-      content: (
-        <div className="space-y-4">
-          <Timeline
-            events={
-              projeto.timeline?.map((t) => ({
-                id: t.id,
-                date: new Date(t.data),
-                title: t.titulo,
-                description: t.descricao,
-              })) || []
-            }
-          />
-        </div>
-      ),
-    },
-    {
-      id: "custos",
-      label: "Custos",
-      content: (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
-              <p className="text-sm text-muted-foreground">Orçado</p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {projeto.custos?.orcado?.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                }) || "R$ 0,00"}
-              </p>
-            </div>
-            <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg">
-              <p className="text-sm text-muted-foreground">Real</p>
-              <p className="text-2xl font-bold text-green-600 dark:text-green-400">
-                {projeto.custos?.real?.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                }) || "R$ 0,00"}
-              </p>
-            </div>
-          </div>
+    onError: (e: any) => toast.error(e?.message || "Não foi possível mover"),
+  });
 
-          <div className="space-y-2">
-            <p className="font-medium">Itens de Custo</p>
-            {projeto.custos?.itens?.map((item, idx) => (
-              <div
-                key={idx}
-                className="flex justify-between items-center p-3 rounded-lg border"
-              >
-                <span className="text-sm">{item.descricao}</span>
-                <div className="text-right">
-                  <p className="text-sm font-medium">
-                    {item.real.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Orçado:{" "}
-                    {item.orcado.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {projeto.custos && (
-            <div
-              className={`p-4 rounded-lg ${projeto.custos.real <= projeto.custos.orcado
-                  ? "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300"
-                  : "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300"
-                }`}
-            >
-              <p className="text-sm font-medium">
-                {projeto.custos.real <= projeto.custos.orcado
-                  ? "Dentro do Orçamento"
-                  : "Acima do Orçamento"}
-              </p>
-              <p className="text-xs">
-                Diferença:{" "}
-                {Math.abs(
-                  projeto.custos.orcado - projeto.custos.real
-                ).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
-              </p>
-            </div>
-          )}
-        </div>
-      ),
-    },
-  ];
+  /* histórico */
+  const { data: historico = [] } = useHistory(projeto?.id);
 
   return (
-    <SidePanel
-      open={open}
-      onClose={onClose}
-      title={`Projeto: ${projeto.cliente_nome ?? "Sem nome"}`}
-      description={`Orçamento ${projeto.orcamento_numero ?? "Não informado"
-        } • ${projeto.kwp ?? 0} kWp`}
-      tabs={tabs}
-    />
+    <Dialog open={open} onOpenChange={onClose}>
+      {/* max height + overflow controlado */}
+      <DialogContent
+        className="max-w-5xl p-0 overflow-hidden"
+        aria-describedby="projeto-detail-desc"
+      >
+        <div className="h-[90vh] flex flex-col">
+          {/* Cabeçalho sticky */}
+          <DialogHeader className="px-6 pt-6 pb-2 sticky top-0 bg-background z-10">
+            <DialogTitle>
+              {projeto?.cliente_nome || projeto?.nome}{" "}
+              <span className="text-muted-foreground text-sm">({projeto?.numero})</span>
+            </DialogTitle>
+            <p id="projeto-detail-desc" className="sr-only">
+              Painel de detalhes do projeto
+            </p>
+          </DialogHeader>
+
+          {/* Corpo rolável */}
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <Tabs defaultValue="fase" className="h-full">
+              <TabsList className="sticky top-0 bg-background z-10">
+                <TabsTrigger value="fase">Fase atual</TabsTrigger>
+                <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
+                <TabsTrigger value="historico">Histórico</TabsTrigger>
+              </TabsList>
+
+              {/* FASE ATUAL */}
+              <TabsContent value="fase" className="mt-4 grid grid-cols-12 gap-6">
+                <div className="col-span-12 lg:col-span-8">
+                  {loadingFields && (
+                    <p className="text-sm text-muted-foreground">Carregando campos…</p>
+                  )}
+                  {!loadingFields && !fields.length && (
+                    <p className="text-sm text-muted-foreground">
+                      Sem campos configurados para esta fase.
+                    </p>
+                  )}
+
+                  <div className="space-y-4">
+                    {fields.map((f) => (
+                      <div key={f.id} className="grid grid-cols-4 gap-3 items-start">
+                        <Label className="col-span-1">
+                          {f.label} {f.required && <span className="text-destructive">*</span>}
+                          {f.helper && (
+                            <div className="text-xs text-muted-foreground">{f.helper}</div>
+                          )}
+                        </Label>
+
+                        <div className="col-span-3">
+                          {/* TEXT */}
+                          {f.type === "text" && (
+                            <Input
+                              value={local[f.id] ?? ""}
+                              onChange={(e) => setValue(f, e.target.value)}
+                            />
+                          )}
+
+                          {/* TEXTAREA */}
+                          {f.type === "textarea" && (
+                            <Textarea
+                              value={local[f.id] ?? ""}
+                              onChange={(e) => setValue(f, e.target.value)}
+                            />
+                          )}
+
+                          {/* NUMBER */}
+                          {f.type === "number" && (
+                            <Input
+                              type="number"
+                              value={local[f.id] ?? ""}
+                              onChange={(e) =>
+                                setValue(
+                                  f,
+                                  e.target.value === "" ? null : Number(e.target.value)
+                                )
+                              }
+                            />
+                          )}
+
+                          {/* DATE */}
+                          {f.type === "date" && (
+                            <Input
+                              type="date"
+                              value={local[f.id]?.slice?.(0, 10) ?? ""}
+                              onChange={(e) => setValue(f, e.target.value || null)}
+                            />
+                          )}
+
+                          {/* BOOLEAN */}
+                          {f.type === "boolean" && (
+                            <Select
+                              value={String(Boolean(local[f.id]))}
+                              onValueChange={(v) => setValue(f, v === "true")}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true">Sim</SelectItem>
+                                <SelectItem value="false">Não</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+
+                          {/* SELECT */}
+                          {f.type === "select" && (
+                            <Select
+                              value={local[f.id] ?? ""}
+                              onValueChange={(v) => setValue(f, v)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {normalizeOptions(f.options).map((o) => (
+                                  <SelectItem key={o.value} value={o.value}>
+                                    {o.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+
+                          {/* RADIO */}
+                          {f.type === "radio" && (
+                            <RadioGroup
+                              value={String(local[f.id] ?? "")}
+                              onValueChange={(v) => setValue(f, v)}
+                              className="grid grid-cols-2 gap-2"
+                            >
+                              {normalizeOptions(f.options).map((o) => (
+                                <div key={o.value} className="flex items-center space-x-2">
+                                  <RadioGroupItem id={`${f.key}-${o.value}`} value={o.value} />
+                                  <Label htmlFor={`${f.key}-${o.value}`}>{o.label}</Label>
+                                </div>
+                              ))}
+                            </RadioGroup>
+                          )}
+
+                          {/* FILE */}
+                          {f.type === "file" && (
+                            <div className="space-y-2">
+                              <Input
+                                type="file"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  try {
+                                    const meta = await handleFileUpload(f, file, projeto.id);
+                                    setValue(f, meta);
+                                    toast.success("Arquivo enviado");
+                                  } catch (err: any) {
+                                    console.error(err);
+                                    toast.error("Falha no upload");
+                                  } finally {
+                                    e.currentTarget.value = "";
+                                  }
+                                }}
+                              />
+
+                              {local[f.id]?.url && (
+                                <div className="flex items-center gap-3">
+                                  <a
+                                    href={local[f.id].url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm text-primary underline"
+                                  >
+                                    {local[f.id].name}{" "}
+                                    {local[f.id].size
+                                      ? `(${Math.round(local[f.id].size / 1024)} KB)`
+                                      : ""}
+                                  </a>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={async () => {
+                                      try {
+                                        await handleFileRemove(local[f.id]);
+                                        setValue(f, null);
+                                        toast.success(
+                                          "Arquivo removido (clique em Salvar para confirmar)"
+                                        );
+                                      } catch (err: any) {
+                                        toast.error("Erro ao remover arquivo");
+                                      }
+                                    }}
+                                  >
+                                    Remover
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2 mt-6">
+                    <Button onClick={() => saveValues.mutate()}>Salvar</Button>
+                    <Button variant="outline" onClick={onClose}>
+                      Fechar
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Lado direito */}
+                <div className="col-span-12 lg:col-span-4">
+                  <div className="border rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium text-sm">Mover card para fase</h4>
+                      <Badge variant="secondary">{projeto?.status}</Badge>
+                    </div>
+                    <Separator className="my-3" />
+                    {!toColumns.length && (
+                      <p className="text-sm text-muted-foreground">
+                        Sem transições configuradas a partir desta fase.
+                      </p>
+                    )}
+                    <div className="flex flex-col gap-2">
+                      {toColumns.map((c) => (
+                        <Button
+                          key={c.id}
+                          variant="secondary"
+                          onClick={() => move.mutate(c.id)}
+                        >
+                          {c.title}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg p-3 mt-4 space-y-2">
+                    <h4 className="font-medium text-sm">Resumo do projeto</h4>
+                    <Separator />
+                    <div className="text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Cliente:</span>{" "}
+                        {projeto?.cliente_nome}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Nº:</span>{" "}
+                        {projeto?.numero}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">kWp:</span> {projeto?.kwp}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Criado em:</span>{" "}
+                        {new Date(projeto?.created_at).toLocaleString("pt-BR")}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => onUpdate(projeto.id, { prioridade: "Alta" })}
+                      >
+                        Prioridade Alta
+                      </Button>
+                      <Button variant="outline" onClick={() => onConcluir(projeto)}>
+                        Concluir
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* DETALHES */}
+              <TabsContent value="detalhes" className="mt-4">
+                <div className="grid md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <Label>Observações</Label>
+                    <Textarea
+                      defaultValue={projeto?.observacoes || ""}
+                      onBlur={(e) =>
+                        onUpdate(projeto.id, { observacoes: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Próximos passos</Label>
+                    <Textarea
+                      defaultValue={projeto?.proximos_passos || ""}
+                      onBlur={(e) =>
+                        onUpdate(projeto.id, { proximos_passos: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* HISTÓRICO */}
+              <TabsContent value="historico" className="mt-4">
+                {!historico.length && (
+                  <p className="text-sm text-muted-foreground">Sem eventos ainda.</p>
+                )}
+
+                {/* scroll só no histórico */}
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                  {historico.map((ev: any) => {
+                    const changed = ev?.changed ?? null; // pode vir null
+                    const safeEntries =
+                      changed && typeof changed === "object"
+                        ? Object.entries(changed as Record<string, any>)
+                        : [];
+
+                    return (
+                      <div key={ev.id} className="border rounded-md p-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium">
+                            {ev.type === "move" && (
+                              <>
+                                Moveu{" "}
+                                {ev.from?.title ? `de ${ev.from.title} ` : ""}para{" "}
+                                {ev.to?.title}
+                              </>
+                            )}
+                            {ev.type === "form" && (ev.message || "Atualizou campos")}
+                            {ev.type === "update" && "Atualização"}
+                            {ev.type === "create" && "Criação"}
+                            {ev.type === "file" && "Arquivo"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(ev.created_at).toLocaleString("pt-BR")}
+                          </div>
+                        </div>
+
+                        {/* mensagem simples */}
+                        {ev.type === "file" && ev.meta?.name && (
+                          <div className="mt-1">
+                            Arquivo:{" "}
+                            {ev.meta?.url ? (
+                              <a
+                                href={ev.meta.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline"
+                              >
+                                {ev.meta.name}
+                              </a>
+                            ) : (
+                              ev.meta.name
+                            )}
+                          </div>
+                        )}
+
+                        {/* diff bonitinho */}
+                        {!!safeEntries.length && (
+                          <div className="mt-2 space-y-1">
+                            {safeEntries.map(([k, v]) => {
+                              const oldVal = v?.old ?? null;
+                              const newVal = v?.new ?? null;
+                              return (
+                                <div key={k} className="text-xs">
+                                  <span className="text-muted-foreground">{k}:</span>{" "}
+                                  <span className="line-through opacity-60 mr-1">
+                                    {prettyValue(oldVal)}
+                                  </span>
+                                  <span className="mx-1">→</span>
+                                  <span className="font-medium">{prettyValue(newVal)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

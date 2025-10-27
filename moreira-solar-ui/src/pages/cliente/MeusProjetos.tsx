@@ -27,7 +27,6 @@ export default function MeusProjetos() {
         }
 
         const clienteData = JSON.parse(clienteLogado);
-        console.log("👤 Cliente logado:", clienteData);
 
         setCliente(clienteData);
         carregarProjetos(clienteData.id);
@@ -42,7 +41,6 @@ export default function MeusProjetos() {
     // 🔹 Carregar projetos do Supabase
     const carregarProjetos = async (clienteId: string) => {
         try {
-            console.log("🚀 Buscando projetos do cliente_id:", clienteId);
 
             const { data, error } = await supabase
                 .from("projetos")
@@ -50,7 +48,6 @@ export default function MeusProjetos() {
                 .eq("cliente_id", clienteId)
                 .order("created_at", { ascending: false });
 
-            console.log("🧩 Supabase resposta bruta:", { data, error });
 
             if (error) {
                 console.error("❌ Erro Supabase:", error);
@@ -60,9 +57,7 @@ export default function MeusProjetos() {
             if (!data || data.length === 0) {
                 console.warn("⚠️ Nenhum projeto encontrado para esse cliente_id.");
             } else {
-                console.log(`✅ ${data.length} projeto(s) encontrados:`);
                 data.forEach((p, i) => {
-                    console.log(`   ${i + 1}. ${p.nome || "Sem nome"} — cliente_id: ${p.cliente_id}`);
                 });
             }
 

@@ -22,6 +22,8 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import GestaoFaturas from "./pages/GestaoFaturas";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import AdminKanban from "@/pages/admin/kanban/AdminKanban";
+import AdminStageForms from "@/pages/admin/kanban/AdminStageForms";
 
 // Importações das páginas do cliente
 import Cadastro from "@/pages/CadastroCliente";
@@ -75,6 +77,8 @@ const AppRoutes = () => {
         <Route path="/usuarios" element={<ProtectedRoute modulo="usuarios"><Usuarios /></ProtectedRoute>} />
         <Route path="/integracoes" element={<ProtectedRoute modulo="integracoes"><Integracoes /></ProtectedRoute>} />
         <Route path="/parametros" element={<ProtectedRoute modulo="parametros"><Parametros /></ProtectedRoute>} />
+        <Route path="/admin/kanban" element={<ProtectedRoute modulo="parametros"><AdminKanban /></ProtectedRoute>} />
+        <Route path="/admin/kanban/forms" element={<ProtectedRoute modulo="parametros"><AdminStageForms /></ProtectedRoute>} />
         <Route path="/perfil" element={<Perfil />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

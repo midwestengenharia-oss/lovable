@@ -13,7 +13,7 @@ export function useClientes() {
         .from('clientes')
         .select('*')
         .order('data_cadastro', { ascending: false });
-      
+
       if (error) throw error;
       return data as Cliente[];
     }
@@ -29,7 +29,7 @@ export function useClientes() {
         .insert([{ ...cliente, user_id: user.id }])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -49,8 +49,7 @@ export function useClientes() {
         .update(updates)
         .eq('id', id)
         .select()
-        .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -69,7 +68,7 @@ export function useClientes() {
         .from('clientes')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {

@@ -10,16 +10,43 @@ import { useParametros } from "@/hooks/useParametros";
 import { useClientes } from "@/hooks/useClientes";
 import { useOrcamentos } from "@/hooks/useOrcamentos";
 import { ClienteDialog } from "@/components/ClienteDialog";
-import { executarSimulacao, calcularDetalhesParcela, formatarMoeda, formatarPorcentagem, SimulacaoResult, DetalhesParcelaResult } from "@/lib/calculadoraSolar";
+import {
+  executarSimulacao,
+  calcularDetalhesParcela,
+  formatarMoeda,
+  formatarPorcentagem,
+  SimulacaoResult,
+  DetalhesParcelaResult,
+} from "@/lib/calculadoraSolar";
+import { gerarPDF } from '@/lib/pdf/gerarPDF';
 import { toast } from "sonner";
 import { Calculator, DollarSign } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+
+export function gerarTabelaEconomia(
+  rows: { periodo: number; economiaAnual: string; economiaAcumulada: string }[]
+): string {
+  if (!rows || !rows.length) return "<tr><td colspan='3'>Sem dados</td></tr>";
+
+  return rows
+    .map(
+      (row, index) => `
+        <tr${index % 2 === 0 ? ' class="alt"' : ""}>
+          <td class="col-ano">Ano ${row.periodo}</td>
+          <td class="col-ea">${row.economiaAnual}</td>
+          <td class="col-ac">${row.economiaAcumulada}</td>
+        </tr>
+      `
+    )
+    .join("");
+}
 
 export default function CalculadoraFinanciamento() {
   const { equipamentos } = useEquipamentos();
   const { parametros } = useParametros();
   const { clientes } = useClientes();
   const { addOrcamento } = useOrcamentos();
+
   const [modoCalculo, setModoCalculo] = useState<"conta" | "geracao">("conta");
   const [valorInput, setValorInput] = useState("");
   const [tarifaCustom, setTarifaCustom] = useState("");
@@ -30,6 +57,7 @@ export default function CalculadoraFinanciamento() {
   const [resultado, setResultado] = useState<SimulacaoResult | null>(null);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<number | null>(null);
   const [detalhes, setDetalhes] = useState<DetalhesParcelaResult | null>(null);
+
 
   const handleCalcular = () => {
     const valor = parseFloat(valorInput);
@@ -81,7 +109,12 @@ export default function CalculadoraFinanciamento() {
     }
 
     const now = new Date();
-    const numero = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const numero = `ORC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+      now.getDate()
+    ).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(
+      2,
+      "0"
+    )}${String(now.getSeconds()).padStart(2, "0")}`;
 
     addOrcamento({
       numero,
@@ -103,11 +136,68 @@ export default function CalculadoraFinanciamento() {
       economia_mensal: resultado.economiaMensal || 0,
       economia_percentual: resultado.economiaPercentual || 0,
       payback_meses: resultado.paybackMeses || null,
-      status: "Rascunho"
+      status: "Rascunho",
     });
 
     toast.success("Orçamento salvo com sucesso!");
   };
+
+  // =============== EXPORTAR PDF ===============
+  const montarLinhasTabelaEconomia = (d: DetalhesParcelaResult) => {
+    return d.tabelaEconomia
+      .map(
+        (row, i) => `
+        <tr class="${i % 2 === 0 ? "alt" : ""}">
+          <td class="col-ano">${row.ano}</td>
+          <td class="col-ea">${formatarMoeda(row.economia)}</td>
+          <td class="col-ac">${formatarMoeda(row.economiaAcumulada)}</td>
+        </tr>`
+      )
+      .join("");
+  };
+
+  const handleExportarPDF = async () => {
+    if (!resultado || !detalhes || !parcelaSelecionada) {
+      toast.error("Selecione uma opção de parcelamento antes de exportar");
+      return;
+    }
+
+    const dataMap: Record<string, any> = {
+      'CLIENTE_NOME_AQUI': resultado.clienteNome || "Cliente não informado",
+      'PARCELAS_AQUI': parcelaSelecionada.toString(),
+      'VALOR_PARCELA_AQUI': formatarMoeda(detalhes.prestacao),
+      'GERACAO_AQUI': resultado.geracaoReal.toString(),
+      'CONTA_BASE_AQUI': formatarMoeda(resultado.valorConta || 0),
+      'INVERSOR_AQUI': resultado.inversorKw.toString(),
+      'QTD_MODULOS_AQUI': resultado.qtdModulos.toString(),
+      'POTENCIA_MODULOS_AQUI': resultado.potenciaModulo.toString(),
+      'VALOR_ESTRUTURA_SOLO_AQUI': formatarMoeda(resultado.custoEstruturaSolo || 0),
+      'ECONOMIA_MENSAL_AQUI': formatarMoeda(detalhes.economiaMensal),
+      'ECONOMIA_PERCENTUAL_AQUI': formatarPorcentagem(detalhes.economiaPercentual),
+      'PAYBACK_MESES_AQUI': detalhes.paybackMeses.toString(),
+      'PAYBACK_ANOS_AQUI': detalhes.paybackAnos.toString(),
+      'GANHOS_PARCELAMENTO_AQUI': formatarMoeda(detalhes.ganhosDuranteParcelas),
+      'ECONOMIA_TOTAL_AQUI': formatarMoeda(detalhes.economiaTotal30Anos),
+      'VENDEDOR_NOME_AQUI': "Vendedor Atual",
+      'VENDEDOR_TELEFONE_AQUI': "(66) 99999-9999",
+      'TABELA_ECONOMIA_ROWS': gerarTabelaEconomia(
+        detalhes.tabelaEconomia.map((row) => ({
+          periodo: row.ano,
+          economiaAnual: formatarMoeda(row.economia),
+          economiaAcumulada: formatarMoeda(row.economiaAcumulada),
+        }))
+      ),
+      'CLASS_ESTRUTURA_SOLO': resultado.estruturaSolo ? '' : 'hidden',
+    };
+
+    await gerarPDF('FinanciamentoTemplate', dataMap, {
+      filename: `Simulacao_${resultado.clienteNome || 'cliente'}.pdf`,
+      debug: false, // mude pra true se quiser ver o HTML renderizado antes do PDF
+    });
+
+    toast.success("📄 PDF gerado com sucesso!");
+  };
+  // ===========================================
 
   return (
     <div className="space-y-6">
@@ -183,7 +273,11 @@ export default function CalculadoraFinanciamento() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Checkbox id="estruturaSolo" checked={estruturaSolo} onCheckedChange={(c) => setEstruturaSolo(c as boolean)} />
+            <Checkbox
+              id="estruturaSolo"
+              checked={estruturaSolo}
+              onCheckedChange={(c) => setEstruturaSolo(c as boolean)}
+            />
             <Label htmlFor="estruturaSolo" className="cursor-pointer">
               Estrutura de Solo (+R$ {(parametros?.adicionalEstrutSoloPorPlaca ?? 0).toFixed(2)}/placa)
             </Label>
@@ -232,7 +326,10 @@ export default function CalculadoraFinanciamento() {
               )}
               <div className="mt-4 pt-4 border-t">
                 <p className="text-lg">
-                  <strong>Total do Sistema:</strong> <span className="text-3xl font-bold text-primary">{formatarMoeda(resultado.valorTotal)}</span>
+                  <strong>Total do Sistema:</strong>{" "}
+                  <span className="text-3xl font-bold text-primary">
+                    {formatarMoeda(resultado.valorTotal)}
+                  </span>
                 </p>
               </div>
             </CardContent>
@@ -313,7 +410,7 @@ export default function CalculadoraFinanciamento() {
                   <DollarSign className="mr-2 h-4 w-4" />
                   Salvar Orçamento
                 </Button>
-                <Button variant="outline" className="flex-1">
+                <Button variant="outline" className="flex-1" onClick={handleExportarPDF}>
                   Exportar PDF
                 </Button>
                 <Button variant="outline" className="flex-1">
@@ -333,3 +430,4 @@ export default function CalculadoraFinanciamento() {
     </div>
   );
 }
+

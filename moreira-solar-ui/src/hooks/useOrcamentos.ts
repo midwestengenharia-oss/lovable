@@ -27,7 +27,6 @@ export function useOrcamentos() {
           };
           sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
           userData = JSON.stringify(usuario_logado);
-          console.log("🔁 Sessão restaurada automaticamente:", usuario_logado);
         } else {
           console.warn("⚠️ Nenhum usuário logado encontrado (nem sessionStorage nem Supabase).");
           return [];
@@ -35,7 +34,6 @@ export function useOrcamentos() {
       }
 
       const user = JSON.parse(userData);
-      console.log("👤 Usuário logado:", user);
 
       // --- Base Query ---
       let query = supabase
@@ -47,11 +45,9 @@ export function useOrcamentos() {
       const perfil = user.tipo || user.perfil; // compatibilidade entre chaves antigas e novas
 
       if (perfil === "admin") {
-        console.log("👑 Admin logado — carregando todos os orçamentos.");
         // sem filtro
       }
       else if (perfil === "gestor") {
-        console.log("🧭 Gestor logado — filtrando orçamentos dos vendedores:", user.vendedores_ids);
         if (user.vendedores_ids?.length > 0) {
           query = query.in("vendedor_id", user.vendedores_ids);
         } else {
@@ -60,7 +56,6 @@ export function useOrcamentos() {
         }
       }
       else if (perfil === "vendedor") {
-        console.log("🧑‍💼 Vendedor logado — filtrando orçamentos dele mesmo:", user.id);
         query = query.eq("vendedor_id", user.id);
       }
       else {
@@ -75,7 +70,6 @@ export function useOrcamentos() {
         throw error;
       }
 
-      console.log(`📦 ${data?.length || 0} orçamentos carregados do Supabase.`);
       return data as Orcamento[];
     }
   });
