@@ -1,4 +1,3 @@
-// src/pages/admin/kanban/AdminStageForms.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
     useBoards,
@@ -13,31 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-    Select,
-    SelectTrigger,
-    SelectValue,
-    SelectContent,
-    SelectItem,
-} from "@/components/ui/select";
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogFooter,
-} from "@/components/ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/components/ui/sonner";
 import { GripVertical, Plus, Pencil, Trash2, Save } from "lucide-react";
-import {
-    DragDropContext,
-    Droppable,
-    Draggable,
-    DropResult,
-} from "@hello-pangea/dnd";
+import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 
 function slugify(s: string) {
     return s
@@ -63,14 +45,12 @@ const fieldTypes = [
 export default function AdminStageForms() {
     const { data: boards = [] } = useBoards();
     const [boardId, setBoardId] = useState<string | undefined>(undefined);
-
     const { data: columns = [] } = useColumnsByBoard(boardId);
     const [columnId, setColumnId] = useState<string | undefined>(undefined);
 
     const { data: fields = [], isLoading } = useFieldsByColumn(columnId);
-
-    // 👇 estado local da lista (para DnD)
     const [local, setLocal] = useState<Field[]>([]);
+
     useEffect(() => {
         setLocal(fields);
     }, [fields]);
@@ -81,10 +61,7 @@ export default function AdminStageForms() {
 
     const [dlgOpen, setDlgOpen] = useState(false);
     const [editing, setEditing] = useState<Field | null>(null);
-    const [form, setForm] = useState<Partial<Field>>({
-        required: false,
-        options: [],
-    });
+    const [form, setForm] = useState<Partial<Field>>({ required: false, options: [] });
 
     const startCreate = () => {
         setEditing(null);
@@ -139,20 +116,15 @@ export default function AdminStageForms() {
             const js = JSON.parse(raw);
             return Array.isArray(js) ? js : [];
         } catch {
-            // permite "A,B,C"
-            return raw
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
+            // permite CSV simples
+            return raw.split(",").map((s) => s.trim()).filter(Boolean);
         }
     };
 
-    // 👇 só recalcula o texto das opções quando form.options mudar
-    const optionsText = useMemo(() => {
-        return form.options && (form.options as any[]).length
-            ? JSON.stringify(form.options)
-            : "";
-    }, [form.options]);
+    const optionsText = useMemo(
+        () => (form.options && (form.options as any[]).length ? JSON.stringify(form.options) : ""),
+        [form.options]
+    );
 
     const onSubmit = async () => {
         if (!boardId || !columnId) {
@@ -180,8 +152,12 @@ export default function AdminStageForms() {
         }
     };
 
-    const onDelete = async (id: string) => {
-        if (!confirm("Remover este campo?")) return;
+    const onDelete = async (id?: string) => {
+        if (!id) {
+            toast.error("ID do campo inválido");
+            return;
+        }
+        if (!confirm("Remover este campo? Os valores associados também serão excluídos.")) return;
         try {
             await del.mutateAsync(id);
             toast.success("Campo removido");
@@ -194,26 +170,15 @@ export default function AdminStageForms() {
         <div className="space-y-6">
             <div>
                 <h1 className="text-2xl font-bold">Admin · Formulários da Fase</h1>
-                <p className="text-muted-foreground">
-                    Defina os campos (processos) que devem ser preenchidos em cada etapa do
-                    Kanban.
-                </p>
+                <p className="text-muted-foreground">Defina os campos (processos) que devem ser preenchidos em cada etapa do Kanban.</p>
             </div>
 
             <Card>
                 <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <Label>Board</Label>
-                        <Select
-                            value={boardId}
-                            onValueChange={(v) => {
-                                setBoardId(v);
-                                setColumnId(undefined);
-                            }}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Selecione um board" />
-                            </SelectTrigger>
+                        <Select value={boardId} onValueChange={(v) => { setBoardId(v); setColumnId(undefined); }}>
+                            <SelectTrigger><SelectValue placeholder="Selecione um board" /></SelectTrigger>
                             <SelectContent>
                                 {boards.map((b) => (
                                     <SelectItem key={b.id} value={b.id}>
@@ -225,14 +190,8 @@ export default function AdminStageForms() {
                     </div>
                     <div>
                         <Label>Coluna (fase)</Label>
-                        <Select
-                            value={columnId}
-                            onValueChange={setColumnId}
-                            disabled={!boardId}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Selecione a fase" />
-                            </SelectTrigger>
+                        <Select value={columnId} onValueChange={setColumnId} disabled={!boardId}>
+                            <SelectTrigger><SelectValue placeholder="Selecione a fase" /></SelectTrigger>
                             <SelectContent>
                                 {columns.map((c) => (
                                     <SelectItem key={c.id} value={c.id}>
@@ -246,11 +205,7 @@ export default function AdminStageForms() {
                         <Button disabled={!columnId} onClick={startCreate}>
                             <Plus className="h-4 w-4 mr-2" /> Novo campo
                         </Button>
-                        <Button
-                            variant="secondary"
-                            disabled={!columnId || isLoading}
-                            onClick={persistOrder}
-                        >
+                        <Button variant="secondary" disabled={!columnId || isLoading} onClick={persistOrder}>
                             <Save className="h-4 w-4 mr-2" /> Salvar ordem
                         </Button>
                     </div>
@@ -265,20 +220,14 @@ export default function AdminStageForms() {
                     </CardHeader>
                     <CardContent>
                         {!columnId ? (
-                            <p className="text-sm text-muted-foreground">
-                                Selecione um board e uma coluna.
-                            </p>
+                            <p className="text-sm text-muted-foreground">Selecione um board e uma coluna.</p>
                         ) : (
                             <DragDropContext onDragEnd={onDrop}>
                                 <Droppable droppableId="fields">
                                     {(provided) => (
-                                        <div
-                                            ref={provided.innerRef}
-                                            {...provided.droppableProps}
-                                            className="space-y-2"
-                                        >
+                                        <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
                                             {local.map((f, i) => (
-                                                <Draggable key={f.id} draggableId={f.id!} index={i}>
+                                                <Draggable key={f.id!} draggableId={f.id!} index={i}>
                                                     {(prov) => (
                                                         <div
                                                             ref={prov.innerRef}
@@ -305,20 +254,16 @@ export default function AdminStageForms() {
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-2">
-                                                                {f.required && (
-                                                                    <Badge variant="secondary">Obrigatório</Badge>
-                                                                )}
-                                                                <Button
-                                                                    size="icon"
-                                                                    variant="ghost"
-                                                                    onClick={() => startEdit(f)}
-                                                                >
+                                                                {f.required && <Badge variant="secondary">Obrigatório</Badge>}
+                                                                <Button size="icon" variant="ghost" onClick={() => startEdit(f)}>
                                                                     <Pencil className="h-4 w-4" />
                                                                 </Button>
                                                                 <Button
                                                                     size="icon"
                                                                     variant="ghost"
-                                                                    onClick={() => onDelete(f.id!)}
+                                                                    onClick={() => onDelete(f.id)}
+                                                                    disabled={!f.id}
+                                                                    title="Remover campo"
                                                                 >
                                                                     <Trash2 className="h-4 w-4" />
                                                                 </Button>
@@ -336,55 +281,26 @@ export default function AdminStageForms() {
                     </CardContent>
                 </Card>
 
-                {/* Preview simples */}
+                {/* Pré-visualização simples */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Pré-visualização</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         {!columnId ? (
-                            <p className="text-sm text-muted-foreground">
-                                Selecione uma fase para visualizar.
-                            </p>
+                            <p className="text-sm text-muted-foreground">Selecione uma fase para visualizar.</p>
                         ) : (
                             local.map((f) => (
                                 <div key={f.id} className="grid grid-cols-4 gap-3 items-start">
                                     <Label className="col-span-1">
-                                        {f.label}{" "}
-                                        {f.required && (
-                                            <span className="text-destructive">*</span>
-                                        )}
-                                        {f.helper && (
-                                            <div className="text-xs text-muted-foreground">
-                                                {f.helper}
-                                            </div>
-                                        )}
+                                        {f.label} {f.required && <span className="text-destructive">*</span>}
+                                        {f.helper && <div className="text-xs text-muted-foreground">{f.helper}</div>}
                                     </Label>
-                                    <div className="col-span-3">
-                                        {f.type === "text" && <Input placeholder="Texto" />}
-                                        {f.type === "textarea" && (
-                                            <textarea
-                                                className="w-full border rounded-md p-2 min-h-[80px]"
-                                                placeholder="Texto longo"
-                                            />
-                                        )}
-                                        {f.type === "number" && (
-                                            <Input type="number" placeholder="0" />
-                                        )}
-                                        {f.type === "date" && <Input type="date" />}
-                                        {f.type === "boolean" && (
-                                            <div className="text-sm text-muted-foreground">
-                                                Sim / Não
-                                            </div>
-                                        )}
-                                        {(f.type === "select" ||
-                                            f.type === "radio" ||
-                                            f.type === "checkbox") && (
-                                                <div className="text-xs text-muted-foreground">
-                                                    Opções:{" "}
-                                                    {(Array.isArray(f.options) ? f.options : []).length}
-                                                </div>
-                                            )}
+                                    <div className="col-span-3 text-sm text-muted-foreground">
+                                        {f.type}
+                                        {Array.isArray(f.options) && f.options?.length
+                                            ? ` · opções: ${f.options.length}`
+                                            : ""}
                                     </div>
                                 </div>
                             ))
@@ -420,18 +336,14 @@ export default function AdminStageForms() {
                                 <Label>Key</Label>
                                 <Input
                                     value={form.key || ""}
-                                    onChange={(e) =>
-                                        setForm({ ...form, key: slugify(e.target.value) })
-                                    }
+                                    onChange={(e) => setForm({ ...form, key: slugify(e.target.value) })}
                                 />
                             </div>
                             <div>
                                 <Label>Tipo</Label>
                                 <Select
-                                    value={form.type as string}
-                                    onValueChange={(v) =>
-                                        setForm({ ...form, type: v as Field["type"] })
-                                    }
+                                    value={(form.type as string) || ""}
+                                    onValueChange={(v) => setForm({ ...form, type: v as Field["type"] })}
                                 >
                                     <SelectTrigger>
                                         <SelectValue placeholder="Selecione" />
@@ -449,9 +361,7 @@ export default function AdminStageForms() {
                                 <Checkbox
                                     id="req"
                                     checked={!!form.required}
-                                    onCheckedChange={(ck) =>
-                                        setForm({ ...form, required: !!ck })
-                                    }
+                                    onCheckedChange={(ck) => setForm({ ...form, required: !!ck })}
                                 />
                                 <Label htmlFor="req">Obrigatório</Label>
                             </div>
@@ -469,87 +379,21 @@ export default function AdminStageForms() {
                             <>
                                 <Separator />
                                 <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <Label>Opções</Label>
-                                        <div className="flex gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        options: [
-                                                            ...(Array.isArray(prev.options) ? (prev.options as any[]) : []),
-                                                            { label: "", value: "" },
-                                                        ],
-                                                    }))
-                                                }
-                                            >
-                                                Adicionar opção
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        options: [
-                                                            { label: "Sim", value: "sim" },
-                                                            { label: "Não", value: "nao" },
-                                                        ],
-                                                    }))
-                                                }
-                                            >
-                                                Sim/Não
-                                            </Button>
-                                        </div>
+                                    <Label>Opções (JSON ou lista separada por vírgulas)</Label>
+                                    <textarea
+                                        className="w-full border rounded-md p-2 min-h-[100px] font-mono text-xs"
+                                        placeholder='Ex.: ["Aéreo","Subterrâneo"] ou [{ "label":"Aéreo","value":"aereo"}]'
+                                        value={optionsText}
+                                        onChange={(e) =>
+                                            setForm({ ...form, options: parseOptions(e.target.value) })
+                                        }
+                                    />
+                                    <div className="text-xs text-muted-foreground">
+                                        Dica: se usar objetos, o painel usa <code>label</code> e <code>value</code>.
                                     </div>
-
-                                    {(Array.isArray(form.options) ? (form.options as any[]) : []).map((opt: any, idx: number) => {
-                                        const o = typeof opt === "string" ? { label: opt, value: slugify(opt) } : (opt || { label: "", value: "" });
-                                        return (
-                                            <div key={idx} className="grid grid-cols-5 gap-2 items-center">
-                                                <Input
-                                                    className="col-span-2"
-                                                    placeholder="Label"
-                                                    value={o.label}
-                                                    onChange={(e) => {
-                                                        const next = [...(form.options as any[])];
-                                                        next[idx] = { ...o, label: e.target.value };
-                                                        setForm((prev) => ({ ...prev, options: next }));
-                                                    }}
-                                                />
-                                                <Input
-                                                    className="col-span-2"
-                                                    placeholder="Valor"
-                                                    value={o.value}
-                                                    onChange={(e) => {
-                                                        const next = [...(form.options as any[])];
-                                                        next[idx] = { ...o, value: slugify(e.target.value) };
-                                                        setForm((prev) => ({ ...prev, options: next }));
-                                                    }}
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    onClick={() => {
-                                                        const next = [...(form.options as any[])];
-                                                        next.splice(idx, 1);
-                                                        setForm((prev) => ({ ...prev, options: next }));
-                                                    }}
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        );
-                                    })}
                                 </div>
                             </>
                         )}
-
                     </div>
 
                     <DialogFooter className="mt-4">
