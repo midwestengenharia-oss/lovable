@@ -1,8 +1,13 @@
-import { useState } from "react";
+// src/pages/PosVenda.tsx
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+
 import { KanbanBoard, KanbanColumnData } from "@/components/kanban/KanbanBoard";
 import { KanbanCardData } from "@/components/kanban/KanbanCard";
 import { ViewToggle } from "@/components/kanban/ViewToggle";
 import { ChamadoDetailPanel } from "@/components/panels/ChamadoDetailPanel";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +41,8 @@ import { toast } from "sonner";
 import { DropResult } from "@hello-pangea/dnd";
 import { useChamados } from "@/hooks/useChamados";
 
+/* ============================= Types ============================= */
+
 type Chamado = {
   id: string;
   numero: string;
@@ -42,6 +50,7 @@ type Chamado = {
   tipo: "Manutenção" | "Garantia" | "Suporte" | "Limpeza";
   prioridade: "Baixa" | "Média" | "Alta";
   status: "Onboarding" | "Ativo" | "Manutenção" | "Chamado" | "Finalizado";
+  substatus?: string | null;
   descricao: string;
   data: string;
   tecnico?: string;
@@ -56,13 +65,144 @@ type Chamado = {
 
 type ViewMode = "kanban" | "lista";
 
-const stages: Chamado["status"][] = [
+type DBBoard = { id: string; slug: string; name: string; entity: string; active: boolean };
+type DBColumn = {
+  id: string; board_id: string; key: string; title: string; ord: number;
+  terminal: boolean; active: boolean; wip_limit: number | null; sla_days: number | null;
+  color_header: string | null; color_badge: string | null; update_patch: Record<string, any> | null;
+};
+type DBTransition = { id: string; board_id: string; from_column_id: string; to_column_id: string };
+
+type LoadedBoard = {
+  board: DBBoard;
+  columns: DBColumn[];
+  transitions: Record<string, string[]>;
+} | null;
+
+/* ============================= Hook: load board (slug/id) ============================= */
+
+function useLoadedBoard(boardSlugOrId: string) {
+  return useQuery({
+    queryKey: ["kanban", "loaded", boardSlugOrId],
+    queryFn: async (): Promise<LoadedBoard> => {
+      // 👇 troca single() por maybeSingle()
+      const { data: board, error: e1 } = await supabase
+        .from("kanban_board")
+        .select("*")
+        .eq("slug", boardSlugOrId)
+        .maybeSingle();
+
+      if (e1) throw e1;
+      if (!board) return null; // 👈 sem erro: deixa a tela usar o fallback
+
+      const { data: cols, error: e2 } = await supabase
+        .from("kanban_column")
+        .select("*")
+        .eq("board_id", board.id)
+        .eq("active", true)
+        .order("ord");
+      if (e2) throw e2;
+
+      const { data: trans, error: e3 } = await supabase
+        .from("kanban_transition")
+        .select("*")
+        .eq("board_id", board.id);
+      if (e3) throw e3;
+
+      const transitions: Record<string, string[]> = {};
+      (trans || []).forEach((t: DBTransition) => {
+        transitions[t.from_column_id] ||= [];
+        transitions[t.from_column_id].push(t.to_column_id);
+      });
+
+      return { board, columns: (cols || []) as DBColumn[], transitions };
+    },
+  });
+}
+
+
+/* ============================= Helpers: board logic ============================= */
+
+function matchesColumn(ch: Chamado, col: DBColumn) {
+  const patch = col.update_patch || {};
+  return Object.entries(patch).every(([k, v]) => (ch as any)[k] === v);
+}
+
+function canMove(loaded: LoadedBoard, fromColId: string, toColId: string) {
+  const allowTo = loaded.transitions[fromColId] || [];
+  return allowTo.length === 0 ? true : allowTo.includes(toColId);
+}
+
+function chamadosToKanban(chamados: Chamado[], columns: DBColumn[]): KanbanColumnData[] {
+  return columns.map((col) => ({
+    id: col.id, // importante: usar o ID real da coluna no droppableId
+    title: col.title,
+    wipLimit: col.wip_limit ?? undefined,
+    items: chamados
+      .filter((c) => matchesColumn(c, col))
+      .map<KanbanCardData>((ch) => ({
+        id: ch.id,
+        title: ch.cliente,
+        subtitle: `#${ch.numero}`,
+        badges: [
+          { label: ch.tipo, variant: "outline" },
+          {
+            label: ch.prioridade,
+            variant:
+              ch.prioridade === "Alta"
+                ? "destructive"
+                : ch.prioridade === "Média"
+                  ? "secondary"
+                  : "outline",
+          },
+        ],
+        avatar: ch.tecnico ? { name: ch.tecnico } : undefined,
+        metadata: { Data: new Date(ch.data).toLocaleDateString("pt-BR") },
+      })),
+  }));
+}
+
+/* ============================= Fallback (quando não existir board) ============================= */
+
+const FALLBACK_STAGES: Chamado["status"][] = [
   "Onboarding",
   "Ativo",
   "Manutenção",
   "Chamado",
   "Finalizado",
 ];
+
+function fallbackTransformToKanbanData(chamados: Chamado[]): KanbanColumnData[] {
+  return FALLBACK_STAGES.map((stage, index) => ({
+    id: String(index), // no fallback ainda usa índice
+    title: stage,
+    items: chamados
+      .filter((c) => c.status === stage)
+      .map((chamado): KanbanCardData => ({
+        id: chamado.id,
+        title: chamado.cliente,
+        subtitle: `#${chamado.numero}`,
+        badges: [
+          { label: chamado.tipo, variant: "outline" },
+          {
+            label: chamado.prioridade,
+            variant:
+              chamado.prioridade === "Alta"
+                ? "destructive"
+                : chamado.prioridade === "Média"
+                  ? "secondary"
+                  : "outline",
+          },
+        ],
+        avatar: chamado.tecnico ? { name: chamado.tecnico } : undefined,
+        metadata: {
+          Data: new Date(chamado.data).toLocaleDateString("pt-BR"),
+        },
+      })),
+  }));
+}
+
+/* ============================= Page ============================= */
 
 export default function PosVenda() {
   const { chamados, isLoading, addChamado, updateChamado } = useChamados();
@@ -71,6 +211,9 @@ export default function PosVenda() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState<Chamado | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+
+  // 🔑 Altere o slug abaixo para o que você criou no Admin (ex.: "pos-vendas")
+  const { data: loaded, isLoading: loadingBoard, isError } = useLoadedBoard("pos-vendas");
 
   const [formData, setFormData] = useState({
     cliente: "",
@@ -86,12 +229,14 @@ export default function PosVenda() {
     addChamado({
       ...formData,
       data: new Date().toISOString(),
-      historico: [{
-        id: `hist-${Date.now()}`,
-        data: new Date().toISOString(),
-        acao: "Chamado criado",
-        usuario: "Sistema",
-      }],
+      historico: [
+        {
+          id: `hist-${Date.now()}`,
+          data: new Date().toISOString(),
+          acao: "Chamado criado",
+          usuario: "Sistema",
+        },
+      ],
       fotos: [],
     });
     toast.success("Chamado criado com sucesso!");
@@ -106,24 +251,78 @@ export default function PosVenda() {
     });
   };
 
-  const filteredChamados = chamados.filter(
-    (c) =>
-      c.cliente.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.numero.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredChamados = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return (chamados || []).filter(
+      (c) =>
+        c.cliente.toLowerCase().includes(term) ||
+        c.numero.toLowerCase().includes(term)
+    );
+  }, [chamados, searchTerm]);
 
-  const handleDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
+  // Drag & drop com board dinâmico (se houver). Senão, fallback por status fixo.
+  const handleDragEnd = async (result: DropResult) => {
+    const dest = result.destination;
+    if (!dest) return;
 
-    const chamado = chamados.find((c) => c.id === result.draggableId);
+    const chamado = (chamados || []).find((c) => c.id === result.draggableId);
     if (!chamado) return;
 
-    const newStatus = stages[parseInt(result.destination.droppableId)];
+    // Se temos board carregado, usamos colunas e transições do Admin
+    if (loaded && loaded.columns?.length) {
+      const fromColId = result.source.droppableId;
+      const toColId = dest.droppableId;
+
+      if (fromColId === toColId) return;
+
+      if (!canMove(loaded, fromColId, toColId)) {
+        toast.error("Transição não permitida");
+        return;
+      }
+
+      const targetCol = loaded.columns.find((c) => c.id === toColId);
+      if (!targetCol) return;
+
+      // WIP guard (opcional)
+      if (typeof targetCol.wip_limit === "number") {
+        const countInTarget = filteredChamados.filter((c) =>
+          Object.entries(targetCol.update_patch || {}).every(([k, v]) => (c as any)[k] === v)
+        ).length;
+        if (countInTarget >= targetCol.wip_limit) {
+          toast.error(`Limite WIP atingido em "${targetCol.title}"`);
+          return;
+        }
+      }
+
+      const patch = (targetCol.update_patch || {}) as Partial<Chamado>;
+
+      try {
+        await updateChamado(chamado.id, {
+          ...patch,
+          historico: [
+            ...(chamado.historico ?? []),
+            {
+              id: `hist-${Date.now()}`,
+              data: new Date().toISOString(),
+              acao: `Movido para ${targetCol.title}`,
+              usuario: "Sistema",
+            },
+          ],
+        });
+        toast.success(`Chamado movido para ${targetCol.title}`);
+      } catch (e: any) {
+        toast.error(`Falha ao mover: ${e?.message || "erro inesperado"}`);
+      }
+      return;
+    }
+
+    // Fallback (sem board): usa array fixo de stages
+    const newStatus = FALLBACK_STAGES[parseInt(dest.droppableId, 10)];
     if (newStatus) {
-      updateChamado(chamado.id, { 
+      await updateChamado(chamado.id, {
         status: newStatus,
         historico: [
-          ...chamado.historico,
+          ...(chamado.historico ?? []),
           {
             id: `hist-${Date.now()}`,
             data: new Date().toISOString(),
@@ -136,36 +335,8 @@ export default function PosVenda() {
     }
   };
 
-  const transformToKanbanData = (chamados: Chamado[]): KanbanColumnData[] => {
-    return stages.map((stage, index) => ({
-      id: String(index),
-      title: stage,
-      items: chamados
-        .filter((c) => c.status === stage)
-        .map((chamado): KanbanCardData => ({
-          id: chamado.id,
-          title: chamado.cliente,
-          subtitle: `#${chamado.numero}`,
-          badges: [
-            { label: chamado.tipo, variant: "outline" },
-            { 
-              label: chamado.prioridade, 
-              variant: chamado.prioridade === "Alta" ? "destructive" : 
-                      chamado.prioridade === "Média" ? "secondary" : "outline"
-            },
-          ],
-          avatar: chamado.tecnico ? {
-            name: chamado.tecnico,
-          } : undefined,
-          metadata: {
-            "Data": new Date(chamado.data).toLocaleDateString("pt-BR"),
-          },
-        })),
-    }));
-  };
-
   const handleCardClick = (item: KanbanCardData) => {
-    const chamado = chamados.find((c) => c.id === item.id);
+    const chamado = (chamados || []).find((c) => c.id === item.id);
     if (chamado) {
       setSelectedChamado(chamado);
       setPanelOpen(true);
@@ -180,7 +351,7 @@ export default function PosVenda() {
       Chamado: { variant: "destructive" as const, label: "Chamado" },
       Finalizado: { variant: "outline" as const, label: "Finalizado" },
     };
-    const s = config[status];
+    const s = (config as any)[status];
     if (!s) return <Badge variant="outline">{status}</Badge>;
     return <Badge variant={s.variant}>{s.label}</Badge>;
   };
@@ -194,17 +365,28 @@ export default function PosVenda() {
     return <Badge variant={variants[prioridade]}>{prioridade}</Badge>;
   };
 
+  const kanbanColumns: KanbanColumnData[] = useMemo(() => {
+    // Com board dinâmico
+    if (loaded && loaded.columns?.length) {
+      return chamadosToKanban(filteredChamados, loaded.columns);
+    }
+    // Fallback
+    return fallbackTransformToKanbanData(filteredChamados);
+  }, [filteredChamados, loaded]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Pós-venda</h1>
-          <p className="text-muted-foreground">Gerencie chamados e suporte ao cliente</p>
+          <p className="text-muted-foreground">
+            Gerencie chamados e suporte ao cliente
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
           <ViewToggle view={view} onViewChange={setView} />
-          
+
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -222,7 +404,9 @@ export default function PosVenda() {
                   <Input
                     id="cliente"
                     value={formData.cliente}
-                    onChange={(e) => setFormData({ ...formData, cliente: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, cliente: e.target.value })
+                    }
                     required
                   />
                 </div>
@@ -232,7 +416,9 @@ export default function PosVenda() {
                   <Input
                     id="tecnico"
                     value={formData.tecnico}
-                    onChange={(e) => setFormData({ ...formData, tecnico: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, tecnico: e.target.value })
+                    }
                   />
                 </div>
 
@@ -241,7 +427,12 @@ export default function PosVenda() {
                     <Label htmlFor="tipo">Tipo</Label>
                     <Select
                       value={formData.tipo}
-                      onValueChange={(v) => setFormData({ ...formData, tipo: v as Chamado["tipo"] })}
+                      onValueChange={(v) =>
+                        setFormData({
+                          ...formData,
+                          tipo: v as Chamado["tipo"],
+                        })
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -259,7 +450,12 @@ export default function PosVenda() {
                     <Label htmlFor="prioridade">Prioridade</Label>
                     <Select
                       value={formData.prioridade}
-                      onValueChange={(v) => setFormData({ ...formData, prioridade: v as Chamado["prioridade"] })}
+                      onValueChange={(v) =>
+                        setFormData({
+                          ...formData,
+                          prioridade: v as Chamado["prioridade"],
+                        })
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -277,14 +473,21 @@ export default function PosVenda() {
                   <Label htmlFor="status">Status Inicial</Label>
                   <Select
                     value={formData.status}
-                    onValueChange={(v) => setFormData({ ...formData, status: v as Chamado["status"] })}
+                    onValueChange={(v) =>
+                      setFormData({
+                        ...formData,
+                        status: v as Chamado["status"],
+                      })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {stages.map(s => (
-                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      {FALLBACK_STAGES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -295,7 +498,9 @@ export default function PosVenda() {
                   <Textarea
                     id="descricao"
                     value={formData.descricao}
-                    onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, descricao: e.target.value })
+                    }
                     rows={4}
                     required
                   />
@@ -322,9 +527,11 @@ export default function PosVenda() {
         </div>
       </div>
 
-      {view === "kanban" ? (
+      {isLoading || loadingBoard ? (
+        <div className="text-sm text-muted-foreground">Carregando…</div>
+      ) : view === "kanban" ? (
         <KanbanBoard
-          columns={transformToKanbanData(filteredChamados)}
+          columns={kanbanColumns}
           onDragEnd={handleDragEnd}
           onCardClick={handleCardClick}
         />
@@ -344,8 +551,8 @@ export default function PosVenda() {
             </TableHeader>
             <TableBody>
               {filteredChamados.map((chamado) => (
-                <TableRow 
-                  key={chamado.id} 
+                <TableRow
+                  key={chamado.id}
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => {
                     setSelectedChamado(chamado);
@@ -360,7 +567,9 @@ export default function PosVenda() {
                   <TableCell>{getPrioridadeBadge(chamado.prioridade)}</TableCell>
                   <TableCell>{getStatusBadge(chamado.status)}</TableCell>
                   <TableCell>{chamado.tecnico || "-"}</TableCell>
-                  <TableCell>{new Date(chamado.data).toLocaleDateString("pt-BR")}</TableCell>
+                  <TableCell>
+                    {new Date(chamado.data).toLocaleDateString("pt-BR")}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

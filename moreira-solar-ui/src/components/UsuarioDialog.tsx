@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useUsuarios, Usuario } from "@/hooks/useUsuarios";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { usePermissoes, Permissao } from "@/hooks/usePermissoes";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,21 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
-// Permissões por módulo (TODO: Migrar para tabela 'permissoes' do Supabase)
-interface Permissao {
-  modulo: string;
-  visualizar: boolean;
-  criar: boolean;
-  editar: boolean;
-  excluir: boolean;
-}
-
-interface UsuarioDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  usuario?: Usuario | null;
-  mode: "create" | "edit";
-}
+// ============================= Constantes =============================
 
 const MODULOS = [
   { id: "dashboard", nome: "Dashboard" },
@@ -42,40 +30,52 @@ const MODULOS = [
   { id: "integracoes", nome: "Integrações" },
 ];
 
-// Função para gerar permissões padrão por perfil (TODO: Migrar para Supabase)
-const getPermissoesDefault = (perfil: string): Permissao[] => {
-  if (perfil === 'admin') {
-    return MODULOS.map(m => ({
+// Permissões padrão por perfil
+const getPermissoesDefault = (perfil: "admin" | "gestor" | "vendedor"): Permissao[] => {
+  if (perfil === "admin") {
+    return MODULOS.map((m) => ({
       modulo: m.id,
       visualizar: true,
       criar: true,
       editar: true,
-      excluir: true
+      excluir: true,
     }));
   }
-  if (perfil === 'gestor') {
-    return MODULOS.map(m => ({
+  if (perfil === "gestor") {
+    return MODULOS.map((m) => ({
       modulo: m.id,
       visualizar: true,
       criar: true,
       editar: true,
-      excluir: ['usuarios', 'parametros'].includes(m.id) ? false : true
+      excluir: ["usuarios", "parametros"].includes(m.id) ? false : true,
     }));
   }
   // vendedor
-  return MODULOS.map(m => ({
+  return MODULOS.map((m) => ({
     modulo: m.id,
-    visualizar: ['dashboard', 'crm', 'propostas', 'clientes', 'orcamentos'].includes(m.id),
-    criar: ['crm', 'propostas', 'orcamentos'].includes(m.id),
-    editar: ['crm', 'propostas', 'orcamentos'].includes(m.id),
-    excluir: false
+    visualizar: ["dashboard", "crm", "propostas", "clientes", "orcamentos"].includes(m.id),
+    criar: ["crm", "propostas", "orcamentos"].includes(m.id),
+    editar: ["crm", "propostas", "orcamentos"].includes(m.id),
+    excluir: false,
   }));
 };
+
+// ============================= Props =============================
+
+interface UsuarioDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  usuario?: Usuario | null;
+  mode: "create" | "edit";
+}
+
+// ============================= Componente =============================
 
 export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDialogProps) {
   const { usuarios, updateUsuario, isUpdating } = useUsuarios();
   const { signUp } = useAuth();
   const { profile: userProfile } = useUserProfile();
+
   const [formData, setFormData] = useState({
     nome: "",
     email: "",
@@ -84,8 +84,18 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
     gestorId: "",
     ativo: true,
   });
+
+  // Hook de permissões (carrega quando estiver editando e houver usuário)
+  const {
+    permissoes: permissoesBD,
+    isLoadingPermissoes,
+    upsertPermissoes,
+    upsertingPermissoes,
+  } = usePermissoes(mode === "edit" ? usuario?.id : undefined);
+
   const [permissoes, setPermissoes] = useState<Permissao[]>([]);
 
+  // Inicialização ao abrir/modal & mudanças de usuário/mode
   useEffect(() => {
     if (usuario && mode === "edit") {
       setFormData({
@@ -96,106 +106,125 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
         gestorId: usuario.gestor_id || "",
         ativo: usuario.ativo ?? true,
       });
-      // TODO: Carregar permissões do usuário do Supabase
-      setPermissoes(getPermissoesDefault(usuario.perfil));
+
+      // Se existir no BD, usar; senão, default do perfil atual
+      if (permissoesBD && permissoesBD.length > 0) {
+        setPermissoes(permissoesBD);
+      } else {
+        setPermissoes(getPermissoesDefault(usuario.perfil));
+      }
     } else {
+      // modo create
+      const perfilInicial: "admin" | "gestor" | "vendedor" = "vendedor";
       setFormData({
         nome: "",
         email: "",
         senha: "",
-        perfil: "vendedor",
+        perfil: perfilInicial,
         gestorId: userProfile?.perfil === "gestor" ? userProfile.id : "",
         ativo: true,
       });
-      setPermissoes(getPermissoesDefault("vendedor"));
+      setPermissoes(getPermissoesDefault(perfilInicial));
     }
-  }, [usuario, mode, open, userProfile]);
+  }, [usuario, mode, open, userProfile, permissoesBD]);
 
+  // Atualiza permissões quando perfil muda (apenas em criação ou quando não temos usuario fixo)
   useEffect(() => {
-    // Atualiza permissões quando perfil muda
     if (!usuario) {
       setPermissoes(getPermissoesDefault(formData.perfil));
     }
   }, [formData.perfil, usuario]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!formData.nome || !formData.email) {
-      toast.error("Preencha os campos obrigatórios");
-      return;
-    }
-
-    if (mode === "create" && !formData.senha) {
-      toast.error("Senha é obrigatória");
-      return;
-    }
-
-    if (formData.senha && formData.senha.length < 6) {
-      toast.error("Senha deve ter no mínimo 6 caracteres");
-      return;
-    }
-
-    // Verifica email único
-    if (mode === "create" || (usuario && usuario.email !== formData.email)) {
-      const emailExiste = usuarios.some((u) => u.email === formData.email);
-      if (emailExiste) {
-        toast.error("Email já cadastrado");
-        return;
-      }
-    }
-
-    if (mode === "edit" && usuario) {
-      // Atualiza usuário existente
-      const updates: Partial<Usuario> & { id: string } = {
-        id: usuario.id,
-        nome: formData.nome,
-        email: formData.email,
-        perfil: formData.perfil,
-        gestor_id: formData.perfil === "vendedor" ? formData.gestorId : null,
-        ativo: formData.ativo,
-        // TODO: Salvar permissões na tabela 'permissoes' do Supabase
-      };
-      // Nota: Senha não pode ser atualizada via profiles - requer Supabase Auth
-      updateUsuario(updates);
-    } else {
-      // Cria novo usuário via Supabase Auth
-      const { error } = await signUp(formData.email, formData.senha, formData.nome, formData.perfil);
-
-      if (error) {
-        toast.error("Erro ao criar usuário: " + error.message);
-        return;
-      }
-
-      toast.success("Usuário criado com sucesso! Um email de confirmação foi enviado.");
-      // TODO: Salvar permissões na tabela 'permissoes' do Supabase
-    }
-
-    onOpenChange(false);
-  };
-
+  // Helpers de permissão
   const handlePermissaoChange = (modulo: string, acao: keyof Permissao, value: boolean) => {
     setPermissoes((prev) => {
-      const index = prev.findIndex((p) => p.modulo === modulo);
-      if (index >= 0) {
-        const newPermissoes = [...prev];
-        newPermissoes[index] = { ...newPermissoes[index], [acao]: value };
-        return newPermissoes;
+      const i = prev.findIndex((p) => p.modulo === modulo);
+      if (i >= 0) {
+        const clone = [...prev];
+        clone[i] = { ...clone[i], [acao]: value };
+        return clone;
       }
       return prev;
     });
   };
 
-  const getPermissao = (modulo: string) => {
-    return permissoes.find((p) => p.modulo === modulo);
-  };
+  const getPermissao = (modulo: string) => permissoes.find((p) => p.modulo === modulo);
 
   const handleAplicarPadrao = () => {
-    setPermissoes(getPermissoesDefault(formData.perfil));
-    toast.success("Permissões padrão aplicadas");
+    const novas = getPermissoesDefault(formData.perfil);
+    setPermissoes(novas);
+    toast.success("Permissões padrão aplicadas.");
+  };
+
+  // Validações e submit
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.nome || !formData.email) {
+      toast.error("Preencha os campos obrigatórios.");
+      return;
+    }
+    if (mode === "create" && !formData.senha) {
+      toast.error("Senha é obrigatória.");
+      return;
+    }
+    if (formData.senha && formData.senha.length < 6) {
+      toast.error("Senha deve ter no mínimo 6 caracteres.");
+      return;
+    }
+
+    // Email único
+    if (mode === "create" || (usuario && usuario.email !== formData.email)) {
+      const emailExiste = usuarios.some((u) => u.email === formData.email);
+      if (emailExiste) {
+        toast.error("Email já cadastrado.");
+        return;
+      }
+    }
+
+    try {
+      if (mode === "edit" && usuario) {
+        const updates: Partial<Usuario> & { id: string } = {
+          id: usuario.id,
+          nome: formData.nome,
+          email: formData.email,
+          perfil: formData.perfil,
+          gestor_id: formData.perfil === "vendedor" ? formData.gestorId : null,
+          ativo: formData.ativo,
+        };
+
+        await updateUsuario(updates);
+        await upsertPermissoes({ userId: usuario.id, permissoes });
+
+        toast.success("Usuário atualizado com sucesso.");
+        onOpenChange(false);
+        return;
+      }
+
+      // Criação
+      const { user, error } = await signUp(formData.email, formData.senha, formData.nome, formData.perfil);
+      if (error) {
+        toast.error("Erro ao criar usuário: " + error.message);
+        return;
+      }
+
+      if (user?.id) {
+        await upsertPermissoes({ userId: user.id, permissoes });
+      } else {
+        // Caso seu signUp não retorne id imediatamente
+        toast.info("Usuário criado. As permissões serão aplicadas ao sincronizar o perfil.");
+      }
+
+      toast.success("Usuário criado com sucesso! Enviamos um email de confirmação.");
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error("Erro ao salvar: " + (err?.message || "tente novamente."));
+    }
   };
 
   const gestores = usuarios.filter((u) => u.perfil === "gestor");
+  const isAdmin = formData.perfil === "admin";
+  const isBusy = isUpdating || upsertingPermissoes || isLoadingPermissoes;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -203,6 +232,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
         <DialogHeader>
           <DialogTitle>{mode === "edit" ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
         </DialogHeader>
+
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="dados">
             <TabsList className="grid w-full grid-cols-2">
@@ -221,6 +251,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
                     required
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email *</Label>
                   <Input
@@ -231,6 +262,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
                     required
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="senha">
                     Senha {mode === "create" ? "*" : "(deixe em branco para manter)"}
@@ -243,27 +275,27 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
                     required={mode === "create"}
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="perfil">Perfil *</Label>
                   <Select
                     value={formData.perfil}
-                    onValueChange={(v: any) => setFormData({ ...formData, perfil: v })}
+                    onValueChange={(v: "admin" | "gestor" | "vendedor") =>
+                      setFormData({ ...formData, perfil: v })
+                    }
                     disabled={userProfile?.perfil === "gestor"}
                   >
                     <SelectTrigger id="perfil">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {userProfile?.perfil === "admin" && (
-                        <SelectItem value="admin">Admin</SelectItem>
-                      )}
-                      {userProfile?.perfil === "admin" && (
-                        <SelectItem value="gestor">Gestor</SelectItem>
-                      )}
+                      {userProfile?.perfil === "admin" && <SelectItem value="admin">Admin</SelectItem>}
+                      {userProfile?.perfil === "admin" && <SelectItem value="gestor">Gestor</SelectItem>}
                       <SelectItem value="vendedor">Vendedor</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
                 {formData.perfil === "vendedor" && (
                   <div className="space-y-2">
                     <Label htmlFor="gestor">Gestor Responsável</Label>
@@ -285,6 +317,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
                     </Select>
                   </div>
                 )}
+
                 <div className="flex items-center space-x-2">
                   <Switch
                     id="ativo"
@@ -297,7 +330,14 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
             </TabsContent>
 
             <TabsContent value="permissoes" className="space-y-4">
-              <div className="flex justify-end">
+              <div className="flex justify-between items-center">
+                <p className="text-sm text-muted-foreground">
+                  {isLoadingPermissoes
+                    ? "Carregando permissões…"
+                    : mode === "edit" && permissoesBD && permissoesBD.length === 0
+                      ? "Sem permissões salvas — usando padrão do perfil."
+                      : null}
+                </p>
                 <Button type="button" variant="outline" size="sm" onClick={handleAplicarPadrao}>
                   Aplicar Permissões Padrão
                 </Button>
@@ -306,19 +346,17 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
               <div className="space-y-4">
                 {MODULOS.map((modulo) => {
                   const perm = getPermissao(modulo.id);
-                  const isAdmin = formData.perfil === "admin";
-
                   return (
                     <div key={modulo.id} className="border rounded-lg p-4">
                       <h4 className="font-medium mb-3">{modulo.nome}</h4>
                       <div className="grid grid-cols-4 gap-4">
-                        {["visualizar", "criar", "editar", "excluir"].map((acao) => (
+                        {(["visualizar", "criar", "editar", "excluir"] as (keyof Permissao)[]).map((acao) => (
                           <div key={acao} className="flex items-center space-x-2">
                             <Checkbox
                               id={`${modulo.id}-${acao}`}
-                              checked={perm?.[acao as keyof Permissao] as boolean}
+                              checked={!!perm?.[acao]}
                               onCheckedChange={(checked) =>
-                                handlePermissaoChange(modulo.id, acao as keyof Permissao, checked as boolean)
+                                handlePermissaoChange(modulo.id, acao, Boolean(checked))
                               }
                               disabled={isAdmin}
                             />
@@ -339,15 +377,11 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
           </Tabs>
 
           <DialogFooter className="mt-6">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isUpdating}>
-              {isUpdating
-                ? "Salvando..."
-                : mode === "edit"
-                ? "Salvar"
-                : "Criar Usuário"}
+            <Button type="submit" disabled={isBusy}>
+              {isBusy ? "Salvando..." : mode === "edit" ? "Salvar" : "Criar Usuário"}
             </Button>
           </DialogFooter>
         </form>

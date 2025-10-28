@@ -8,12 +8,12 @@ export interface Usuario {
   email?: string | null;
   avatar?: string | null;
   perfil: 'admin' | 'gestor' | 'vendedor';
-  gestor_id?: string | null;
+  gestorId?: string | null; // 👈 Mantém camelCase para o frontend
   ativo?: boolean;
-  data_cadastro?: string;
-  ultimo_acesso?: string;
-  created_at?: string;
-  updated_at?: string;
+  dataCadastro?: string;
+  ultimoAcesso?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export function useUsuarios() {
@@ -28,27 +28,76 @@ export function useUsuarios() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return data as Usuario[];
+
+      // 🔄 Mapeia snake_case do DB para camelCase do frontend
+      return (data || []).map(u => ({
+        id: u.id,
+        nome: u.nome,
+        email: u.email,
+        avatar: u.avatar,
+        perfil: u.perfil,
+        gestorId: u.gestor_id,
+        ativo: u.ativo ?? true,
+        dataCadastro: u.data_cadastro,
+        ultimoAcesso: u.ultimo_acesso,
+        createdAt: u.created_at,
+        updatedAt: u.updated_at,
+      })) as Usuario[];
     }
   });
 
   const updateUsuario = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Usuario> & { id: string }) => {
+      // 🔄 Converte camelCase para snake_case e limpa valores inválidos
+      const dbUpdates: any = {};
+
+      if (updates.nome !== undefined) dbUpdates.nome = updates.nome;
+      if (updates.email !== undefined) dbUpdates.email = updates.email;
+      if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+      if (updates.perfil !== undefined) dbUpdates.perfil = updates.perfil;
+      if (updates.ativo !== undefined) dbUpdates.ativo = updates.ativo;
+
+      // ✅ Trata gestorId especialmente (converte "" para null)
+      if (updates.gestorId !== undefined) {
+        dbUpdates.gestor_id = updates.gestorId === "" || updates.gestorId === null
+          ? null
+          : updates.gestorId;
+      }
+
+      if (updates.ultimoAcesso !== undefined) dbUpdates.ultimo_acesso = updates.ultimoAcesso;
+
+      console.log('📤 Enviando para DB:', dbUpdates);
+
       const { data, error } = await supabase
         .from('profiles')
-        .update(updates)
+        .update(dbUpdates)
         .eq('id', id)
         .select()
         .single();
 
       if (error) throw error;
-      return data;
+
+      // 🔄 Retorna em camelCase
+      return {
+        id: data.id,
+        nome: data.nome,
+        email: data.email,
+        avatar: data.avatar,
+        perfil: data.perfil,
+        gestorId: data.gestor_id,
+        ativo: data.ativo,
+        dataCadastro: data.data_cadastro,
+        ultimoAcesso: data.ultimo_acesso,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      } as Usuario;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['usuarios'] });
       toast.success('Usuário atualizado com sucesso');
     },
     onError: (error: any) => {
+      console.error('❌ Erro detalhado:', error);
       toast.error('Erro ao atualizar usuário: ' + error.message);
     }
   });

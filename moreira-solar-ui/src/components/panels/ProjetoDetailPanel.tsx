@@ -1,3 +1,4 @@
+// src/components/panels/ProjetoDetailPanel.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -65,9 +66,58 @@ const slugify = (s: string) =>
 const normalizeOptions = (options: any): { label: string; value: string }[] => {
   if (!Array.isArray(options)) return [];
   return options.map((o: any) =>
-    typeof o === "string" ? { label: o, value: slugify(o) } : { label: String(o.label ?? o.value), value: String(o.value ?? o.label) }
+    typeof o === "string"
+      ? { label: o, value: slugify(o) }
+      : { label: String(o.label ?? o.value), value: String(o.value ?? o.label) }
   );
 };
+
+// extrai a "key" (caminho interno) a partir de uma URL pública/assinada
+function extractKeyFromUrl(url: string, bucket = BUCKET): string | null {
+  try {
+    const u = new URL(url);
+    const p = u.pathname;
+    const m1 = `/object/public/${bucket}/`;
+    const m2 = `/object/sign/${bucket}/`;
+    if (p.includes(m1)) return p.split(m1)[1] || null;
+    if (p.includes(m2)) return (p.split(m2)[1] || "").split("?")[0] || null;
+    const m3 = `/${bucket}/`;
+    if (p.includes(m3)) return p.split(m3)[1] || null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// aceita objeto {path,url,...}, string url, ou array desses
+function collectStorageKeysFromValue(v: any, bucket = BUCKET): string[] {
+  const keys: string[] = [];
+  const pushMaybe = (candidate: any) => {
+    if (!candidate) return;
+    if (typeof candidate === "string") {
+      const byUrl = extractKeyFromUrl(candidate, bucket);
+      if (byUrl) keys.push(byUrl);
+      return;
+    }
+    if (typeof candidate === "object") {
+      const path = typeof candidate.path === "string" ? candidate.path.trim() : null;
+      const url = typeof candidate.url === "string" ? candidate.url.trim() : null;
+      if (path) {
+        keys.push(path);
+        return;
+      }
+      if (url) {
+        const k = extractKeyFromUrl(url, bucket);
+        if (k) keys.push(k);
+      }
+    }
+  };
+
+  if (Array.isArray(v)) v.forEach(pushMaybe);
+  else pushMaybe(v);
+
+  return Array.from(new Set(keys.filter(Boolean)));
+}
 
 async function handleFileUpload(field: StageField, file: File, projetoId: string) {
   const path = `${projetoId}/${field.key}/${Date.now()}-${file.name}`;
@@ -85,8 +135,9 @@ async function handleFileUpload(field: StageField, file: File, projetoId: string
 }
 
 async function handleFileRemove(current: any) {
-  if (!current?.path) return;
-  const { error } = await supabase.storage.from(BUCKET).remove([current.path]);
+  const keys = collectStorageKeysFromValue(current, BUCKET);
+  if (keys.length === 0) return; // evita "argument 1: key must not be null"
+  const { error } = await supabase.storage.from(BUCKET).remove(keys);
   if (error) throw error;
 }
 
@@ -94,8 +145,7 @@ async function handleFileRemove(current: any) {
 function prettyValue(v: any) {
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "object") {
-    // metadado de arquivo
-    if (v.url && v.name) return v.name;
+    if (v.url && v.name) return v.name; // metadado de arquivo
     return JSON.stringify(v);
   }
   return String(v);
@@ -115,7 +165,7 @@ function useStageFields(columnId?: string) {
         .eq("active", true)
         .order("ord");
       if (error) throw error;
-      return data as any;
+      return (data || []) as any;
     },
   });
 }
@@ -131,7 +181,7 @@ function useStageValues(projectId?: string, fieldIds?: string[]) {
         .eq("project_id", projectId!)
         .in("field_id", fieldIds!);
       if (error) throw error;
-      return data as any;
+      return (data || []) as any;
     },
   });
 }
@@ -249,13 +299,90 @@ export function ProjetoDetailPanel({
   /* histórico */
   const { data: historico = [] } = useHistory(projeto?.id);
 
+  // ======= agrupamento por fase (título da coluna) + toggle mostrar mais =======
+  const phaseOf = (ev: any): string =>
+    ev?.to?.title || ev?.from?.title || ev?.column_title || "Outros";
+
+  const groupedHistory = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const ev of historico) {
+      const k = phaseOf(ev);
+      const arr = map.get(k) || [];
+      arr.push(ev);
+      map.set(k, arr);
+    }
+    // mantém a ordem pela data do primeiro item (mais recente primeiro)
+    return Array.from(map.entries()).sort(([, a], [, b]) => {
+      const tA = new Date(a[0]?.created_at || 0).getTime();
+      const tB = new Date(b[0]?.created_at || 0).getTime();
+      return tB - tA;
+    });
+  }, [historico]);
+
+  const [expandedGroup, setExpandedGroup] = useState<Record<string, boolean>>({});
+  const toggleGroup = (k: string) =>
+    setExpandedGroup((p) => ({ ...p, [k]: !p[k] }));
+
+  // render de um item do histórico (reutiliza seu layout)
+  const renderEvent = (ev: any) => {
+    const changed = ev?.changed ?? null;
+    const safeEntries =
+      changed && typeof changed === "object" ? Object.entries(changed as Record<string, any>) : [];
+
+    return (
+      <div key={ev.id} className="border rounded-md p-3 text-sm">
+        <div className="flex items-center justify-between">
+          <div className="font-medium">
+            {ev.type === "move" && (
+              <>Moveu {ev.from?.title ? `de ${ev.from.title} ` : ""}para {ev.to?.title}</>
+            )}
+            {ev.type === "form" && (ev.message || "Atualizou campos")}
+            {ev.type === "update" && "Atualização"}
+            {ev.type === "create" && "Criação"}
+            {ev.type === "file" && "Arquivo"}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {new Date(ev.created_at).toLocaleString("pt-BR")}
+          </div>
+        </div>
+
+        {ev.type === "file" && ev.meta?.name && (
+          <div className="mt-1">
+            Arquivo:{" "}
+            {ev.meta?.url ? (
+              <a href={ev.meta.url} target="_blank" rel="noreferrer" className="underline">
+                {ev.meta.name}
+              </a>
+            ) : (
+              ev.meta.name
+            )}
+          </div>
+        )}
+
+        {!!safeEntries.length && (
+          <div className="mt-2 space-y-1">
+            {safeEntries.map(([k, v]) => {
+              const oldVal = v?.old ?? null;
+              const newVal = v?.new ?? null;
+              return (
+                <div key={k} className="text-xs">
+                  <span className="text-muted-foreground">{k}:</span>{" "}
+                  <span className="line-through opacity-60 mr-1">{prettyValue(oldVal)}</span>
+                  <span className="mx-1">→</span>
+                  <span className="font-medium">{prettyValue(newVal)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       {/* max height + overflow controlado */}
-      <DialogContent
-        className="max-w-5xl p-0 overflow-hidden"
-        aria-describedby="projeto-detail-desc"
-      >
+      <DialogContent className="max-w-5xl p-0 overflow-hidden" aria-describedby="projeto-detail-desc">
         <div className="h-[90vh] flex flex-col">
           {/* Cabeçalho sticky */}
           <DialogHeader className="px-6 pt-6 pb-2 sticky top-0 bg-background z-10">
@@ -263,9 +390,7 @@ export function ProjetoDetailPanel({
               {projeto?.cliente_nome || projeto?.nome}{" "}
               <span className="text-muted-foreground text-sm">({projeto?.numero})</span>
             </DialogTitle>
-            <p id="projeto-detail-desc" className="sr-only">
-              Painel de detalhes do projeto
-            </p>
+            <p id="projeto-detail-desc" className="sr-only">Painel de detalhes do projeto</p>
           </DialogHeader>
 
           {/* Corpo rolável */}
@@ -280,13 +405,9 @@ export function ProjetoDetailPanel({
               {/* FASE ATUAL */}
               <TabsContent value="fase" className="mt-4 grid grid-cols-12 gap-6">
                 <div className="col-span-12 lg:col-span-8">
-                  {loadingFields && (
-                    <p className="text-sm text-muted-foreground">Carregando campos…</p>
-                  )}
+                  {loadingFields && <p className="text-sm text-muted-foreground">Carregando campos…</p>}
                   {!loadingFields && !fields.length && (
-                    <p className="text-sm text-muted-foreground">
-                      Sem campos configurados para esta fase.
-                    </p>
+                    <p className="text-sm text-muted-foreground">Sem campos configurados para esta fase.</p>
                   )}
 
                   <div className="space-y-4">
@@ -294,26 +415,18 @@ export function ProjetoDetailPanel({
                       <div key={f.id} className="grid grid-cols-4 gap-3 items-start">
                         <Label className="col-span-1">
                           {f.label} {f.required && <span className="text-destructive">*</span>}
-                          {f.helper && (
-                            <div className="text-xs text-muted-foreground">{f.helper}</div>
-                          )}
+                          {f.helper && <div className="text-xs text-muted-foreground">{f.helper}</div>}
                         </Label>
 
                         <div className="col-span-3">
                           {/* TEXT */}
                           {f.type === "text" && (
-                            <Input
-                              value={local[f.id] ?? ""}
-                              onChange={(e) => setValue(f, e.target.value)}
-                            />
+                            <Input value={local[f.id] ?? ""} onChange={(e) => setValue(f, e.target.value)} />
                           )}
 
                           {/* TEXTAREA */}
                           {f.type === "textarea" && (
-                            <Textarea
-                              value={local[f.id] ?? ""}
-                              onChange={(e) => setValue(f, e.target.value)}
-                            />
+                            <Textarea value={local[f.id] ?? ""} onChange={(e) => setValue(f, e.target.value)} />
                           )}
 
                           {/* NUMBER */}
@@ -322,10 +435,7 @@ export function ProjetoDetailPanel({
                               type="number"
                               value={local[f.id] ?? ""}
                               onChange={(e) =>
-                                setValue(
-                                  f,
-                                  e.target.value === "" ? null : Number(e.target.value)
-                                )
+                                setValue(f, e.target.value === "" ? null : Number(e.target.value))
                               }
                             />
                           )}
@@ -345,9 +455,7 @@ export function ProjetoDetailPanel({
                               value={String(Boolean(local[f.id]))}
                               onValueChange={(v) => setValue(f, v === "true")}
                             >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
+                              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="true">Sim</SelectItem>
                                 <SelectItem value="false">Não</SelectItem>
@@ -357,18 +465,11 @@ export function ProjetoDetailPanel({
 
                           {/* SELECT */}
                           {f.type === "select" && (
-                            <Select
-                              value={local[f.id] ?? ""}
-                              onValueChange={(v) => setValue(f, v)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione" />
-                              </SelectTrigger>
+                            <Select value={local[f.id] ?? ""} onValueChange={(v) => setValue(f, v)}>
+                              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                               <SelectContent>
                                 {normalizeOptions(f.options).map((o) => (
-                                  <SelectItem key={o.value} value={o.value}>
-                                    {o.label}
-                                  </SelectItem>
+                                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
@@ -411,19 +512,19 @@ export function ProjetoDetailPanel({
                                 }}
                               />
 
-                              {local[f.id]?.url && (
+                              {local[f.id] && (
                                 <div className="flex items-center gap-3">
-                                  <a
-                                    href={local[f.id].url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm text-primary underline"
-                                  >
-                                    {local[f.id].name}{" "}
-                                    {local[f.id].size
-                                      ? `(${Math.round(local[f.id].size / 1024)} KB)`
-                                      : ""}
-                                  </a>
+                                  {(() => {
+                                    const val = Array.isArray(local[f.id]) ? local[f.id][0] : local[f.id];
+                                    const url = val?.url || val;
+                                    const name = val?.name || "arquivo";
+                                    const size = val?.size ? ` (${Math.round(val.size / 1024)} KB)` : "";
+                                    return url ? (
+                                      <a href={url} target="_blank" rel="noreferrer" className="text-sm text-primary underline">
+                                        {name}{size}
+                                      </a>
+                                    ) : null;
+                                  })()}
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -431,9 +532,7 @@ export function ProjetoDetailPanel({
                                       try {
                                         await handleFileRemove(local[f.id]);
                                         setValue(f, null);
-                                        toast.success(
-                                          "Arquivo removido (clique em Salvar para confirmar)"
-                                        );
+                                        toast.success("Arquivo removido (clique em Salvar para confirmar)");
                                       } catch (err: any) {
                                         toast.error("Erro ao remover arquivo");
                                       }
@@ -452,9 +551,7 @@ export function ProjetoDetailPanel({
 
                   <div className="flex gap-2 mt-6">
                     <Button onClick={() => saveValues.mutate()}>Salvar</Button>
-                    <Button variant="outline" onClick={onClose}>
-                      Fechar
-                    </Button>
+                    <Button variant="outline" onClick={onClose}>Fechar</Button>
                   </div>
                 </div>
 
@@ -467,17 +564,11 @@ export function ProjetoDetailPanel({
                     </div>
                     <Separator className="my-3" />
                     {!toColumns.length && (
-                      <p className="text-sm text-muted-foreground">
-                        Sem transições configuradas a partir desta fase.
-                      </p>
+                      <p className="text-sm text-muted-foreground">Sem transições configuradas a partir desta fase.</p>
                     )}
                     <div className="flex flex-col gap-2">
                       {toColumns.map((c) => (
-                        <Button
-                          key={c.id}
-                          variant="secondary"
-                          onClick={() => move.mutate(c.id)}
-                        >
+                        <Button key={c.id} variant="secondary" onClick={() => move.mutate(c.id)}>
                           {c.title}
                         </Button>
                       ))}
@@ -488,32 +579,14 @@ export function ProjetoDetailPanel({
                     <h4 className="font-medium text-sm">Resumo do projeto</h4>
                     <Separator />
                     <div className="text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Cliente:</span>{" "}
-                        {projeto?.cliente_nome}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Nº:</span>{" "}
-                        {projeto?.numero}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">kWp:</span> {projeto?.kwp}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Criado em:</span>{" "}
-                        {new Date(projeto?.created_at).toLocaleString("pt-BR")}
-                      </div>
+                      <div><span className="text-muted-foreground">Cliente:</span> {projeto?.cliente_nome}</div>
+                      <div><span className="text-muted-foreground">Nº:</span> {projeto?.numero}</div>
+                      <div><span className="text-muted-foreground">kWp:</span> {projeto?.kwp}</div>
+                      <div><span className="text-muted-foreground">Criado em:</span> {new Date(projeto?.created_at).toLocaleString("pt-BR")}</div>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => onUpdate(projeto.id, { prioridade: "Alta" })}
-                      >
-                        Prioridade Alta
-                      </Button>
-                      <Button variant="outline" onClick={() => onConcluir(projeto)}>
-                        Concluir
-                      </Button>
+                      <Button variant="outline" onClick={() => onUpdate(projeto.id, { prioridade: "Alta" })}>Prioridade Alta</Button>
+                      <Button variant="outline" onClick={() => onConcluir(projeto)}>Concluir</Button>
                     </div>
                   </div>
                 </div>
@@ -524,99 +597,41 @@ export function ProjetoDetailPanel({
                 <div className="grid md:grid-cols-2 gap-4 text-sm">
                   <div>
                     <Label>Observações</Label>
-                    <Textarea
-                      defaultValue={projeto?.observacoes || ""}
-                      onBlur={(e) =>
-                        onUpdate(projeto.id, { observacoes: e.target.value })
-                      }
-                    />
+                    <Textarea defaultValue={projeto?.observacoes || ""} onBlur={(e) => onUpdate(projeto.id, { observacoes: e.target.value })} />
                   </div>
                   <div>
                     <Label>Próximos passos</Label>
-                    <Textarea
-                      defaultValue={projeto?.proximos_passos || ""}
-                      onBlur={(e) =>
-                        onUpdate(projeto.id, { proximos_passos: e.target.value })
-                      }
-                    />
+                    <Textarea defaultValue={projeto?.proximos_passos || ""} onBlur={(e) => onUpdate(projeto.id, { proximos_passos: e.target.value })} />
                   </div>
                 </div>
               </TabsContent>
 
-              {/* HISTÓRICO */}
+              {/* HISTÓRICO (AGRUPADO) */}
               <TabsContent value="historico" className="mt-4">
-                {!historico.length && (
-                  <p className="text-sm text-muted-foreground">Sem eventos ainda.</p>
-                )}
+                {!historico.length && <p className="text-sm text-muted-foreground">Sem eventos ainda.</p>}
 
                 {/* scroll só no histórico */}
-                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-                  {historico.map((ev: any) => {
-                    const changed = ev?.changed ?? null; // pode vir null
-                    const safeEntries =
-                      changed && typeof changed === "object"
-                        ? Object.entries(changed as Record<string, any>)
-                        : [];
-
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                  {groupedHistory.map(([phase, items]) => {
+                    const isOpen = !!expandedGroup[phase];
+                    const visible = isOpen ? items : items.slice(0, 3);
                     return (
-                      <div key={ev.id} className="border rounded-md p-3 text-sm">
-                        <div className="flex items-center justify-between">
+                      <div key={phase} className="border rounded-md">
+                        <div className="flex items-center justify-between p-3">
                           <div className="font-medium">
-                            {ev.type === "move" && (
-                              <>
-                                Moveu{" "}
-                                {ev.from?.title ? `de ${ev.from.title} ` : ""}para{" "}
-                                {ev.to?.title}
-                              </>
-                            )}
-                            {ev.type === "form" && (ev.message || "Atualizou campos")}
-                            {ev.type === "update" && "Atualização"}
-                            {ev.type === "create" && "Criação"}
-                            {ev.type === "file" && "Arquivo"}
+                            {phase}{" "}
+                            <span className="text-muted-foreground">({items.length})</span>
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(ev.created_at).toLocaleString("pt-BR")}
-                          </div>
+                          {items.length > 3 && (
+                            <Button size="sm" variant="ghost" onClick={() => toggleGroup(phase)}>
+                              {isOpen ? "Mostrar menos" : `Mostrar mais (${items.length - 3})`}
+                            </Button>
+                          )}
                         </div>
-
-                        {/* mensagem simples */}
-                        {ev.type === "file" && ev.meta?.name && (
-                          <div className="mt-1">
-                            Arquivo:{" "}
-                            {ev.meta?.url ? (
-                              <a
-                                href={ev.meta.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="underline"
-                              >
-                                {ev.meta.name}
-                              </a>
-                            ) : (
-                              ev.meta.name
-                            )}
-                          </div>
-                        )}
-
-                        {/* diff bonitinho */}
-                        {!!safeEntries.length && (
-                          <div className="mt-2 space-y-1">
-                            {safeEntries.map(([k, v]) => {
-                              const oldVal = v?.old ?? null;
-                              const newVal = v?.new ?? null;
-                              return (
-                                <div key={k} className="text-xs">
-                                  <span className="text-muted-foreground">{k}:</span>{" "}
-                                  <span className="line-through opacity-60 mr-1">
-                                    {prettyValue(oldVal)}
-                                  </span>
-                                  <span className="mx-1">→</span>
-                                  <span className="font-medium">{prettyValue(newVal)}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <Separator />
+                        <div className="p-3 space-y-3">
+                          {visible.map((ev) => renderEvent(ev))}
+                        </div>
                       </div>
                     );
                   })}

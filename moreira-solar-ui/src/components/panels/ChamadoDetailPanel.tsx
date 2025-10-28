@@ -1,72 +1,96 @@
-import { SidePanel } from "./SidePanel";
-import { Chamado } from "@/contexts/AppContext";
-import { Badge } from "@/components/ui/badge";
+// src/components/panels/ChamadoDetailPanel.tsx
+import { useEffect, useMemo, useState } from "react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { FileUpload } from "@/components/shared/FileUpload";
-import { 
-  CheckCircle2, 
-  Clock, 
-  AlertTriangle, 
-  User, 
-  Calendar,
-  Wrench,
-  Shield,
-  Phone,
-  Droplets
-} from "lucide-react";
-import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select";
+import { toast } from "sonner";
+import { CalendarDays, CheckCircle2, Phone, UserRound } from "lucide-react";
+import type { Chamado } from "@/hooks/useChamados";
 
-interface ChamadoDetailPanelProps {
+type Props = {
   chamado: Chamado | null;
   open: boolean;
   onClose: () => void;
-  onUpdate: (id: string, data: Partial<Chamado>) => void;
-}
+  onUpdate: (id: string, patch: Partial<Chamado>) => void; // já está assim no seu hook
+};
 
-export function ChamadoDetailPanel({ chamado, open, onClose, onUpdate }: ChamadoDetailPanelProps) {
-  const [resolucao, setResolucao] = useState(chamado?.resolucao || "");
+const TIPOS: Chamado["tipo"][] = ["Manutenção", "Garantia", "Suporte", "Limpeza"];
+const PRIORIDADES: Chamado["prioridade"][] = ["Baixa", "Média", "Alta"];
+const STATUS: Chamado["status"][] = ["Onboarding", "Triagem" as any, "Agendado" as any, "Em Rota" as any, "Em atendimento" as any, "Aguardando Peça" as any, "Aguardando Cliente" as any, "Ativo", "Manutenção", "Chamado", "Finalizado"]
+// ^ você pode manter apenas os que realmente existem na sua CHECK constraint.
+// Se sua tabela só aceita: Onboarding | Ativo | Manutenção | Chamado | Finalizado,
+// troque pela linha abaixo e remova os demais:
+// const STATUS: Chamado["status"][] = ["Onboarding", "Ativo", "Manutenção", "Chamado", "Finalizado"];
 
-  if (!chamado) return null;
+export function ChamadoDetailPanel({ chamado, open, onClose, onUpdate }: Props) {
+  const [local, setLocal] = useState<Partial<Chamado>>({});
 
-  const getTipoIcon = () => {
-    switch (chamado.tipo) {
-      case "Manutenção": return <Wrench className="h-4 w-4" />;
-      case "Garantia": return <Shield className="h-4 w-4" />;
-      case "Suporte": return <Phone className="h-4 w-4" />;
-      case "Limpeza": return <Droplets className="h-4 w-4" />;
-      default: return <Wrench className="h-4 w-4" />;
+  useEffect(() => {
+    setLocal(chamado ?? {});
+  }, [chamado]);
+
+  const numero = local.numero ?? chamado?.numero ?? "";
+  const cliente = local.cliente ?? chamado?.cliente ?? "";
+  const dataISO = (local.data ?? chamado?.data) || new Date().toISOString();
+  const dataBR = useMemo(() => new Date(dataISO).toLocaleDateString("pt-BR"), [dataISO]);
+
+  const dirty = useMemo(() => {
+    if (!chamado) return false;
+    const keys: (keyof Chamado)[] = [
+      "cliente", "tipo", "prioridade", "status", "descricao", "resolucao", "tecnico", "data"
+    ];
+    return keys.some(k => (local as any)[k] !== (chamado as any)[k]);
+  }, [local, chamado]);
+
+  function save() {
+    if (!chamado) return;
+    // validações mínimas
+    if (!local.cliente?.trim()) return toast.error("Informe o cliente");
+    if (!local.tipo) return toast.error("Selecione o tipo");
+    if (!local.prioridade) return toast.error("Selecione a prioridade");
+    if (!local.status) return toast.error("Selecione o status");
+
+    onUpdate(chamado.id, {
+      cliente: local.cliente,
+      tipo: local.tipo,
+      prioridade: local.prioridade,
+      status: local.status,
+      descricao: local.descricao,
+      resolucao: local.resolucao,
+      tecnico: local.tecnico,
+      data: local.data ?? chamado.data,
+      historico: [
+        ...(chamado.historico ?? []),
+        {
+          id: `hist-${Date.now()}`,
+          data: new Date().toISOString(),
+          acao: "Chamado atualizado",
+          usuario: "Sistema",
+        },
+      ],
+    });
+    toast.success("Alterações salvas");
+  }
+
+  function finalizar() {
+    if (!chamado) return;
+    if (!local.resolucao || !local.resolucao.trim()) {
+      return toast.error("Escreva a resolução antes de finalizar.");
     }
-  };
-
-  const getPrioridadeBadge = () => {
-    const variants = {
-      Baixa: "outline",
-      Média: "secondary",
-      Alta: "destructive",
-    } as const;
-    return <Badge variant={variants[chamado.prioridade]}>{chamado.prioridade}</Badge>;
-  };
-
-  const getStatusBadge = () => {
-    const config = {
-      Onboarding: { variant: "secondary" as const, label: "Onboarding" },
-      Ativo: { variant: "default" as const, label: "Ativo" },
-      Manutenção: { variant: "secondary" as const, label: "Manutenção" },
-      Chamado: { variant: "destructive" as const, label: "Chamado" },
-      Finalizado: { variant: "outline" as const, label: "Finalizado" },
-    };
-    const status = config[chamado.status];
-    return <Badge variant={status.variant}>{status.label}</Badge>;
-  };
-
-  const finalizarChamado = () => {
     onUpdate(chamado.id, {
       status: "Finalizado",
-      resolucao,
-      dataFinalizacao: new Date().toISOString(),
+      resolucao: local.resolucao,
+      data_finalizacao: new Date().toISOString(),
       historico: [
-        ...chamado.historico,
+        ...(chamado.historico ?? []),
         {
           id: `hist-${Date.now()}`,
           data: new Date().toISOString(),
@@ -75,164 +99,165 @@ export function ChamadoDetailPanel({ chamado, open, onClose, onUpdate }: Chamado
         },
       ],
     });
+    toast.success("Chamado finalizado");
     onClose();
-  };
-
-  const tabs = [
-    {
-      id: "detalhes",
-      label: "Detalhes",
-      content: (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-muted">
-              {getTipoIcon()}
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-lg">{chamado.cliente}</h3>
-              <p className="text-sm text-muted-foreground">Chamado #{chamado.numero}</p>
-            </div>
-            {getPrioridadeBadge()}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
-            <div>
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                Data
-              </p>
-              <p className="font-semibold text-sm">
-                {new Date(chamado.data).toLocaleDateString("pt-BR")}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <User className="h-3 w-3" />
-                Técnico
-              </p>
-              <p className="font-semibold text-sm">{chamado.tecnico || "Não atribuído"}</p>
-            </div>
-            <div className="col-span-2">
-              <p className="text-sm text-muted-foreground">Tipo</p>
-              <Badge variant="outline" className="mt-1">
-                {getTipoIcon()}
-                <span className="ml-1">{chamado.tipo}</span>
-              </Badge>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-2">Status</p>
-            {getStatusBadge()}
-          </div>
-
-          <div>
-            <p className="text-sm font-medium mb-2">Descrição</p>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{chamado.descricao}</p>
-          </div>
-
-          {chamado.status !== "Finalizado" && (
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Resolução</label>
-                <Textarea
-                  value={resolucao}
-                  onChange={(e) => setResolucao(e.target.value)}
-                  placeholder="Descreva a solução aplicada..."
-                  rows={4}
-                />
-              </div>
-              <Button 
-                onClick={finalizarChamado}
-                className="w-full"
-                disabled={!resolucao.trim()}
-              >
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Finalizar Chamado
-              </Button>
-            </div>
-          )}
-
-          {chamado.resolucao && (
-            <div className="p-4 bg-green-50 dark:bg-green-950 rounded-lg">
-              <p className="text-sm font-medium text-green-700 dark:text-green-300 mb-1">Resolução</p>
-              <p className="text-sm text-green-600 dark:text-green-400">{chamado.resolucao}</p>
-              {chamado.dataFinalizacao && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-                  Finalizado em {new Date(chamado.dataFinalizacao).toLocaleDateString("pt-BR")}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: "historico",
-      label: "Histórico",
-      content: (
-        <div className="space-y-3">
-          {chamado.historico.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              Nenhuma ação registrada ainda
-            </p>
-          ) : (
-            chamado.historico.map((hist) => (
-              <div key={hist.id} className="flex gap-3 p-3 rounded-lg border">
-                <div className="flex-shrink-0">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{hist.acao}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hist.usuario} • {new Date(hist.data).toLocaleString("pt-BR")}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      ),
-    },
-    {
-      id: "fotos",
-      label: "Fotos",
-      content: (
-        <div className="space-y-4">
-          <FileUpload
-            files={chamado.fotos.map(f => ({
-              id: f.id,
-              nome: f.descricao || "Foto",
-              url: f.url,
-              tipo: "image/jpeg",
-              data: f.data,
-            }))}
-            onFilesChange={(files) => 
-              onUpdate(chamado.id, {
-                fotos: files.map(f => ({
-                  id: f.id,
-                  url: f.url,
-                  descricao: f.nome,
-                  data: f.data,
-                })),
-              })
-            }
-            accept="image/*"
-            maxFiles={10}
-            showGallery={true}
-          />
-        </div>
-      ),
-    },
-  ];
+  }
 
   return (
-    <SidePanel
-      open={open}
-      onClose={onClose}
-      title={`Chamado #${chamado.numero}`}
-      description={`${chamado.cliente} • ${chamado.tipo}`}
-      tabs={tabs}
-    />
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            Chamado {numero ? `#${numero}` : ""} · {cliente || "—"}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            Visualizar e editar os dados do chamado selecionado.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!chamado ? (
+          <div className="text-sm text-muted-foreground">Nenhum chamado selecionado.</div>
+        ) : (
+          <div className="space-y-6">
+            {/* Cabeçalho resumido */}
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span>Tipo:</span>
+                <Badge variant="outline">{local.tipo || chamado.tipo}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <span>Data:</span>
+                <Badge variant="outline">{dataBR}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <UserRound className="h-4 w-4 text-muted-foreground" />
+                <span>Prioridade:</span>
+                <Badge variant={
+                  (local.prioridade || chamado.prioridade) === "Alta" ? "destructive" :
+                    (local.prioridade || chamado.prioridade) === "Média" ? "secondary" : "outline"
+                }>
+                  {local.prioridade || chamado.prioridade}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                <span>Status:</span>
+                <Badge variant={
+                  (local.status || chamado.status) === "Chamado" ? "destructive" :
+                    (local.status || chamado.status) === "Finalizado" ? "outline" : "secondary"
+                }>
+                  {local.status || chamado.status}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Form principal */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Cliente</Label>
+                <Input
+                  value={local.cliente ?? ""}
+                  onChange={(e) => setLocal((p) => ({ ...p, cliente: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Técnico</Label>
+                <Input
+                  placeholder="Não atribuído"
+                  value={local.tecnico ?? ""}
+                  onChange={(e) => setLocal((p) => ({ ...p, tecnico: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tipo</Label>
+                <Select
+                  value={local.tipo ?? chamado.tipo}
+                  onValueChange={(v) => setLocal((p) => ({ ...p, tipo: v as Chamado["tipo"] }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TIPOS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Prioridade</Label>
+                <Select
+                  value={local.prioridade ?? chamado.prioridade}
+                  onValueChange={(v) => setLocal((p) => ({ ...p, prioridade: v as Chamado["prioridade"] }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PRIORIDADES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={local.status ?? chamado.status}
+                  onValueChange={(v) => setLocal((p) => ({ ...p, status: v as Chamado["status"] }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {STATUS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Data</Label>
+                <Input
+                  type="date"
+                  value={new Date(dataISO).toISOString().slice(0, 10)}
+                  onChange={(e) => setLocal((p) => ({ ...p, data: new Date(e.target.value).toISOString() }))}
+                />
+              </div>
+
+              <div className="col-span-2 space-y-2">
+                <Label>Descrição</Label>
+                <Textarea
+                  rows={3}
+                  value={local.descricao ?? ""}
+                  onChange={(e) => setLocal((p) => ({ ...p, descricao: e.target.value }))}
+                />
+              </div>
+
+              <div className="col-span-2 space-y-2">
+                <Label>Resolução</Label>
+                <Textarea
+                  rows={3}
+                  placeholder="Descreva a solução aplicada…"
+                  value={local.resolucao ?? ""}
+                  onChange={(e) => setLocal((p) => ({ ...p, resolucao: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Ações */}
+            <div className="flex items-center justify-between pt-2">
+              <div className="text-xs text-muted-foreground">
+                Criado em {new Date(chamado.created_at ?? chamado.data).toLocaleString("pt-BR")}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={onClose}>Fechar</Button>
+                <Button variant="secondary" disabled={!dirty} onClick={save}>
+                  Salvar alterações
+                </Button>
+                <Button onClick={finalizar} disabled={(local.status ?? chamado.status) === "Finalizado"}>
+                  Finalizar Chamado
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

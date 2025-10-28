@@ -25,7 +25,9 @@ type Column = {
     id: string; board_id: string; key: string; title: string; ord: number;
     terminal: boolean; active: boolean; wip_limit: number | null; sla_days: number | null;
     color_header: string | null; color_badge: string | null;
+    update_patch?: any | null;            // 👈 ADICIONE ISTO
 };
+
 type Transition = { id: string; board_id: string; from_column_id: string; to_column_id: string };
 
 // ---------------- guards (login/perfil) ----------------
@@ -340,6 +342,13 @@ function ColumnDialog({
     const [sla, setSla] = useState<string>(initial?.sla_days?.toString?.() ?? "");
     const [hdr, setHdr] = useState<string>(initial?.color_header ?? "#f8fafc");
     const [bdg, setBdg] = useState<string>(initial?.color_badge ?? "#e5e7eb");
+
+    // 👇 estado correto para o patch JSON
+    const [colPatch, setColPatch] = useState<string>(() => {
+        try { return JSON.stringify(initial?.update_patch ?? {}, null, 2); }
+        catch { return "{}"; }
+    });
+
     useEffect(() => {
         setTitle(initial?.title ?? "");
         setKey(initial?.key ?? "");
@@ -349,7 +358,10 @@ function ColumnDialog({
         setSla(initial?.sla_days?.toString?.() ?? "");
         setHdr(initial?.color_header ?? "#f8fafc");
         setBdg(initial?.color_badge ?? "#e5e7eb");
+        try { setColPatch(JSON.stringify(initial?.update_patch ?? {}, null, 2)); }
+        catch { setColPatch("{}"); }
     }, [initial]);
+
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -394,6 +406,15 @@ function ColumnDialog({
                         <Label className="col-span-1">Cor badge</Label>
                         <Input className="col-span-2 h-9 p-1" type="color" value={bdg} onChange={(e) => setBdg(e.target.value)} />
                     </div>
+                    <div className="grid grid-cols-3 gap-3 items-start">
+                        <Label className="col-span-1">Patch (JSON)</Label>
+                        <textarea
+                            className="col-span-2 border rounded-md p-2 font-mono text-xs h-28"
+                            value={colPatch}
+                            onChange={(e) => setColPatch(e.target.value)}
+                            placeholder={`{"status":"Chamado","substatus":"Agendado"}`}
+                        />
+                    </div>
                 </div>
                 <DialogFooter>
                     <Button variant="secondary" onClick={() => onOpenChange(false)}>
@@ -402,6 +423,16 @@ function ColumnDialog({
                     <Button
                         onClick={() => {
                             if (!title.trim()) return toast.error("Informe o título");
+
+                            // ✅ parse seguro do JSON
+                            let parsedPatch: any = {};
+                            try {
+                                parsedPatch = colPatch.trim() ? JSON.parse(colPatch) : {};
+                            } catch {
+                                toast.error("Patch (JSON) inválido");
+                                return;
+                            }
+
                             onSubmit({
                                 ...(initial?.id ? { id: initial.id } : {}),
                                 title: title.trim(),
@@ -412,6 +443,7 @@ function ColumnDialog({
                                 sla_days: sla ? Number(sla) : null,
                                 color_header: hdr,
                                 color_badge: bdg,
+                                update_patch: parsedPatch, // 👈 agora existe e está validado
                             });
                             onOpenChange(false);
                         }}
@@ -419,6 +451,7 @@ function ColumnDialog({
                         Salvar
                     </Button>
                 </DialogFooter>
+
             </DialogContent>
         </Dialog>
     );

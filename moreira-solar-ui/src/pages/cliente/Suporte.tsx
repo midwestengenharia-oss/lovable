@@ -186,6 +186,7 @@ export default function Suporte() {
                 tipo,
                 prioridade,
                 status: "Chamado",
+                substatus: "Triagem",
                 descricao,
                 data: new Date().toISOString(),
                 user_id: clienteData?.user_id,

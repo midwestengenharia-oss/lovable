@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import logoMoreira from "@/assets/logo-moreira.png";
-import { supabase } from "@/lib/supabase"; // ⚙️ Certifique-se de usar o mesmo client importado em useOrcamentos
+import { supabase } from "@/lib/supabase";
 
 export default function Login() {
   const { user, signIn } = useAuth();
@@ -56,7 +56,6 @@ export default function Login() {
 
     setIsLoading(true);
     const { error } = await signIn(email, senha);
-    setIsLoading(false);
 
     if (!error) {
       try {
@@ -65,29 +64,57 @@ export default function Login() {
 
         if (data?.session?.user) {
           const user = data.session.user;
-          const meta = user.user_metadata || {};
 
-          // ✅ Cria o objeto esperado pelos hooks (como useOrcamentos)
+          // 🔒 VERIFICAÇÃO DE USUÁRIO ATIVO
+          const { data: usuarioDB, error: erroConsulta } = await supabase
+            .from("profiles") // 👈 Tabela correta
+            .select("ativo, nome, perfil")
+            .eq("id", user.id)
+            .single();
+
+          if (erroConsulta) {
+            console.error("❌ Erro ao buscar usuário:", erroConsulta);
+            toast.error("Erro ao verificar dados do usuário");
+            await supabase.auth.signOut();
+            setIsLoading(false);
+            return;
+          }
+
+          // ⛔ Verifica se o usuário está INATIVO
+          if (usuarioDB?.ativo === false) {
+            toast.error("Sua conta está inativa. Entre em contato com o administrador.");
+            await supabase.auth.signOut();
+            setIsLoading(false);
+            return;
+          }
+
+          // ✅ Usuário ativo - pode prosseguir
+          const meta = user.user_metadata || {};
           const usuario_logado = {
             id: user.id,
-            nome: meta.nome || "Usuário",
-            tipo: meta.perfil || "vendedor", // admin | gestor | vendedor
+            nome: usuarioDB.nome || meta.nome || "Usuário",
+            tipo: usuarioDB.perfil || meta.perfil || "vendedor",
             email: user.email,
           };
 
           // ✅ Salva no sessionStorage
           sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
+
+          toast.success("Login realizado com sucesso!");
+          setIsLoading(false);
+          navigate("/");
         } else {
           console.warn("⚠️ Nenhum usuário retornado da sessão Supabase.");
+          setIsLoading(false);
         }
       } catch (err) {
         console.error("❌ Erro ao salvar usuário no sessionStorage:", err);
+        toast.error("Erro ao processar login");
+        setIsLoading(false);
       }
-
-      toast.success("Login realizado com sucesso!");
-      navigate("/");
     } else {
-      toast.error("Email ou senha incorretos: " + error.message);
+      toast.error("Email ou senha incorretos");
+      setIsLoading(false);
     }
   };
 

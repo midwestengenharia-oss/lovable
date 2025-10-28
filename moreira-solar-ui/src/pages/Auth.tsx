@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -13,18 +13,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo-moreira.png";
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const { signIn, user } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const isVerifying = useRef(false); // 🚦 Flag para bloquear redirect durante verificação
 
-  // 🔁 Redireciona se já estiver logado
+  // 🔁 Redireciona se já estiver logado (MAS NÃO durante verificação)
   useEffect(() => {
-    if (user) {
+    if (user && !isVerifying.current) {
       navigate("/");
     }
   }, [user, navigate]);
@@ -38,18 +40,81 @@ export default function Auth() {
     }
 
     setIsLoading(true);
-    const { error } = await signIn(loginEmail, loginPassword);
-    setIsLoading(false);
+    isVerifying.current = true; // 🚦 Ativa a flag de verificação
 
-    if (error) {
-      if (error.message.includes("Invalid login credentials")) {
-        toast.error("Email ou senha incorretos");
-      } else {
-        toast.error("Erro ao fazer login: " + error.message);
+    try {
+      // 🔐 Faz login direto no Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: loginPassword,
+      });
+
+      if (authError) {
+        if (authError.message.includes("Invalid login credentials")) {
+          toast.error("Email ou senha incorretos");
+        } else {
+          toast.error("Erro ao fazer login: " + authError.message);
+        }
+        setIsLoading(false);
+        isVerifying.current = false;
+        return;
       }
-    } else {
+
+      if (!authData?.user) {
+        toast.error("Erro ao processar login");
+        setIsLoading(false);
+        isVerifying.current = false;
+        return;
+      }
+
+      // 🔒 VERIFICAÇÃO IMEDIATA DE USUÁRIO ATIVO
+      const { data: perfil, error: erroConsulta } = await supabase
+        .from("profiles")
+        .select("ativo, nome, perfil")
+        .eq("id", authData.user.id)
+        .single();
+
+      if (erroConsulta) {
+        console.error("❌ Erro ao buscar perfil:", erroConsulta);
+        toast.error("Erro ao verificar dados do usuário");
+        await supabase.auth.signOut();
+        setIsLoading(false);
+        isVerifying.current = false;
+        return;
+      }
+
+      // ⛔ SE INATIVO: Bloqueia TOTALMENTE
+      if (perfil?.ativo === false) {
+        console.log("⛔ Usuário inativo detectado - bloqueando acesso");
+
+        // Faz logout e aguarda completar
+        await supabase.auth.signOut();
+
+        toast.error("Sua conta está inativa. Entre em contato com o administrador.");
+        setIsLoading(false);
+        isVerifying.current = false;
+
+        // Limpa os campos
+        setLoginEmail("");
+        setLoginPassword("");
+        return;
+      }
+
+      // ✅ Usuário ATIVO - permite o acesso
+      console.log("✅ Usuário ativo - permitindo acesso");
+      isVerifying.current = false; // 🚦 Libera o redirect
       toast.success("Login realizado com sucesso!");
-      navigate("/");
+      setIsLoading(false);
+
+      // Força o redirect imediatamente
+      navigate("/", { replace: true });
+
+    } catch (err) {
+      console.error("❌ Erro no processo de login:", err);
+      toast.error("Erro ao processar login");
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      isVerifying.current = false;
     }
   };
 
@@ -102,7 +167,7 @@ export default function Auth() {
               {isLoading ? (
                 <div className="flex items-center justify-center space-x-2">
                   <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
-                  <span>Entrando...</span>
+                  <span>Verificando...</span>
                 </div>
               ) : (
                 "Entrar"
