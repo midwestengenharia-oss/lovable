@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from 'sonner';
 import { Proposta } from '@/types/supabase';
 
@@ -9,29 +8,22 @@ export function usePropostas() {
   const { data: propostas = [], isLoading } = useQuery({
     queryKey: ['propostas'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('propostas')
-        .select('*')
-        .order('data', { ascending: false });
-      
-      if (error) throw error;
-      return data as Proposta[];
+      const res = await fetch('/api/propostas', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar propostas');
+      return (await res.json()) as Proposta[];
     }
   });
 
   const addProposta = useMutation({
     mutationFn: async (proposta: Omit<Proposta, 'id' | 'user_id'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const { data, error } = await supabase
-        .from('propostas')
-        .insert([{ ...proposta, user_id: user.id }])
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/propostas', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(proposta),
+      });
+      if (!res.ok) throw new Error('Erro ao criar proposta');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['propostas'] });
@@ -44,15 +36,14 @@ export function usePropostas() {
 
   const updateProposta = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Proposta> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('propostas')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/propostas/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error('Erro ao atualizar proposta');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['propostas'] });
@@ -65,12 +56,8 @@ export function usePropostas() {
 
   const deleteProposta = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('propostas')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
+      const res = await fetch(`/api/propostas/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Erro ao remover proposta');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['propostas'] });

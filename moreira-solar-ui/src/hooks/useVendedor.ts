@@ -1,5 +1,5 @@
 // src/hooks/useVendedor.ts
-import { supabase } from "@/integrations/supabase/client";
+// Vendedores via BFF
 
 /**
  * Retorna um mapa de vendedores no formato:
@@ -8,20 +8,15 @@ import { supabase } from "@/integrations/supabase/client";
  * }
  */
 export async function getVendedoresMap(): Promise<Record<string, string>> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, nome");
-
-  if (error) {
-    console.error("Erro ao buscar vendedores:", error);
+  try {
+    const res = await fetch('/api/vendedores', { credentials: 'include' });
+    if (!res.ok) throw new Error('Falha ao buscar vendedores');
+    const data = await res.json();
+    const map: Record<string, string> = {};
+    for (const v of data || []) map[v.id] = v.nome;
+    return map;
+  } catch (e) {
+    console.error('Erro ao buscar vendedores:', e);
     return {};
   }
-
-  const vendedoresMap: Record<string, string> = {};
-
-  for (const vendedor of data) {
-    vendedoresMap[vendedor.id] = vendedor.nome;
-  }
-
-  return vendedoresMap;
 }

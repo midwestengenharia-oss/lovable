@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints
 import { toast } from 'sonner';
 
 export interface TitularEnergia {
@@ -21,15 +21,10 @@ export function useTitularesEnergia() {
   const { data: titulares = [], isLoading } = useQuery({
     queryKey: ['titulares_energia'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('titulares_energia')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Mapear campos snake_case para camelCase
-      return (data || []).map(titular => ({
+      const res = await fetch('/api/titulares-energia', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar titulares');
+      const data = await res.json();
+      return (data || []).map((titular: any) => ({
         ...titular,
         cpfCnpj: titular.cpf_cnpj,
         dataCadastro: titular.created_at
@@ -39,24 +34,9 @@ export function useTitularesEnergia() {
 
   const addTitular = useMutation({
     mutationFn: async (titular: Omit<TitularEnergia, 'id' | 'user_id' | 'created_at' | 'updated_at' | 'dataCadastro'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const { data, error } = await supabase
-        .from('titulares_energia')
-        .insert([{
-          nome: titular.nome,
-          cpf_cnpj: titular.cpfCnpj,
-          email: titular.email,
-          telefone: titular.telefone,
-          observacoes: titular.observacoes,
-          user_id: user.id
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/titulares-energia', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...titular, cpf_cnpj: titular.cpfCnpj }) });
+      if (!res.ok) throw new Error('Falha ao cadastrar titular');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['titulares_energia'] });
@@ -75,16 +55,9 @@ export function useTitularesEnergia() {
       if (updates.email !== undefined) updateData.email = updates.email;
       if (updates.telefone !== undefined) updateData.telefone = updates.telefone;
       if (updates.observacoes !== undefined) updateData.observacoes = updates.observacoes;
-
-      const { data, error } = await supabase
-        .from('titulares_energia')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/titulares-energia/${id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(updateData) });
+      if (!res.ok) throw new Error('Falha ao atualizar titular');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['titulares_energia'] });
@@ -97,12 +70,8 @@ export function useTitularesEnergia() {
 
   const deleteTitular = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('titulares_energia')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/titulares-energia/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao remover titular');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['titulares_energia'] });

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints
 import { toast } from 'sonner';
 
 export interface Parametro {
@@ -36,12 +36,9 @@ export function useParametros() {
   const { data: parametrosArray = [], isLoading } = useQuery({
     queryKey: ['parametros'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('parametros')
-        .select('*');
-
-      if (error) throw error;
-      return data as Parametro[];
+      const res = await fetch('/api/parametros', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar parâmetros');
+      return (await res.json()) as Parametro[];
     }
   });
 
@@ -97,18 +94,8 @@ export function useParametros() {
       ];
 
       // Atualizar cada parâmetro
-      for (const update of updates) {
-        const { error } = await supabase
-          .from('parametros')
-          .upsert({
-            chave: update.chave,
-            valor: update.valor
-          }, {
-            onConflict: 'chave'
-          });
-
-        if (error) throw error;
-      }
+      const res = await fetch('/api/parametros', { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(updates) });
+      if (!res.ok) throw new Error('Falha ao atualizar parâmetros');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['parametros'] });

@@ -1,6 +1,5 @@
 // src/hooks/useProjetosKanban.ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 
 export type Projeto = {
     id: string;
@@ -29,12 +28,9 @@ export function useProjetos() {
     return useQuery({
         queryKey: ["projetos", "list"],
         queryFn: async (): Promise<Projeto[]> => {
-            const { data, error } = await supabase
-                .from("projetos")
-                .select("*")
-                .order("created_at", { ascending: false });
-            if (error) throw error;
-            return data as any;
+            const res = await fetch('/api/projetos', { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar projetos');
+            return (await res.json()) as any;
         }
     });
 }
@@ -45,8 +41,13 @@ export function useUpdateProjeto() {
     return useMutation({
         mutationFn: async (payload: Partial<Projeto> & { id: string }) => {
             const { id, ...rest } = payload;
-            const { error } = await supabase.from("projetos").update(rest).eq("id", id);
-            if (error) throw error;
+            const res = await fetch(`/api/projetos/${id}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(rest),
+            });
+            if (!res.ok) throw new Error('Falha ao atualizar projeto');
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["projetos", "list"] }),
     });
@@ -57,11 +58,13 @@ export function useMoveProjeto() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async ({ projetoId, toColumnId }: { projetoId: string; toColumnId: string }) => {
-            const { error } = await supabase.rpc("fn_move_projeto", {
-                p_projeto_id: projetoId,
-                p_to_column_id: toColumnId,
+            const res = await fetch(`/api/projetos/${projetoId}`, {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ kanban_column_id: toColumnId, entered_status_at: new Date().toISOString() })
             });
-            if (error) throw error;
+            if (!res.ok) throw new Error('Falha ao mover projeto');
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["projetos", "list"] }),
     });

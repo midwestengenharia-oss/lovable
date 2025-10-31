@@ -21,112 +21,71 @@ import { KanbanBoard, KanbanColumnData } from "@/components/kanban/KanbanBoard";
 import { KanbanCardData } from "@/components/kanban/KanbanCard";
 import { SidePanel } from "@/components/panels/SidePanel";
 import type { DropResult } from "@hello-pangea/dnd";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido do front: utilizar BFF
 
 function isUUID(v?: string | null) {
   return !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
 
-async function criarProjetoAPartirDoOrcamento(orc: Orcamento) {
-  // 1) Usuário (RLS do INSERT exige user_id = auth.uid())
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
-  if (authErr) throw authErr;
-  if (!user) throw new Error("Faça login para criar o projeto.");
+// Cria projeto via BFF (sem Supabase no front)
+async function criarProjetoAPartirDoOrcamentoBff(orc: Orcamento) {
+  const boardsRes = await fetch('/api/kanban/boards', { credentials: 'include' });
+  if (!boardsRes.ok) throw new Error('Falha ao carregar boards');
+  const boards = await boardsRes.json();
+  const board = boards.find((b: any) => b.slug === 'obra' || b.name === 'Obra' || b.titulo === 'Obra') || boards[0];
+  if (!board?.id) throw new Error("Board 'obra' não encontrado");
 
-  // 2) Board e coluna 'inventario'
-  const { data: board, error: bErr } = await supabase
-    .from("kanban_board")
-    .select("id")
-    .eq("slug", "obra")
-    .maybeSingle();
-  if (bErr) throw bErr;
-  if (!board) throw new Error("Board 'obra' não encontrado.");
+  const colsRes = await fetch(`/api/kanban/columns?boardId=${encodeURIComponent(board.id)}`, { credentials: 'include' });
+  if (!colsRes.ok) throw new Error('Falha ao carregar colunas');
+  const columns = await colsRes.json();
+  const inv = columns.find((c: any) => c.key === 'inventario');
+  const targetCol = inv || columns[0];
+  if (!targetCol?.id) throw new Error('Nenhuma coluna encontrada no board');
 
-  // tenta 'inventario'; se não existir, usa a 1ª coluna
-  let toColumnId: string | null = null;
-  let toKey = "inventario";
+  const toColumnId: string = targetCol.id;
+  const toKey: string = targetCol.key || 'inventario';
 
-  const { data: colInv } = await supabase
-    .from("kanban_column")
-    .select("id,key")
-    .eq("board_id", board.id)
-    .eq("key", "inventario")
-    .maybeSingle();
-
-  if (colInv?.id) {
-    toColumnId = colInv.id;
-    toKey = colInv.key;
-  } else {
-    const { data: firstCol, error: cErr } = await supabase
-      .from("kanban_column")
-      .select("id,key")
-      .eq("board_id", board.id)
-      .order("ord")
-      .limit(1)
-      .maybeSingle();
-    if (cErr) throw cErr;
-    if (!firstCol) throw new Error("Nenhuma coluna encontrada no board.");
-    toColumnId = firstCol.id;
-    toKey = firstCol.key;
-  }
-
-  // 3) número do projeto
   const now = new Date();
-  const numeroProjeto = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-    now.getDate()
-  ).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(
-    now.getSeconds()
-  ).padStart(2, "0")}`;
+  const numeroProjeto = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
 
-  // 4) payload
   const kwp = ((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000;
-
   const payload: any = {
     numero: numeroProjeto,
     nome: orc.cliente_nome || orc.numero,
     cliente_id: orc.cliente_id || null,
-    cliente_nome: orc.cliente_nome || "",
+    cliente_nome: orc.cliente_nome || '',
     orcamento_id: orc.id,
     kwp,
-    // só grava responsavel_id se for um UUID válido (evita FK inválida)
     responsavel_id: isUUID((orc as any).vendedor_id) ? (orc as any).vendedor_id : null,
-    user_id: user.id,                    // ✅ RLS (INSERT) exige isso
-    status: toKey,                       // ✅ igual à key da coluna
-    kanban_column_id: toColumnId,        // ✅ garante aparecer no Kanban imediatamente
-    proximos_passos: "Realizar vistoria técnica no local",
-    data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10), // date
-    prioridade: "Média",
+    status: toKey,
+    kanban_column_id: toColumnId,
+    proximos_passos: 'Realizar vistoria técnica no local',
+    data_conclusao_prevista: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    prioridade: 'Média',
     progresso: 0,
     checklist: [
-      { id: "c1", titulo: "Solicitar documentação do cliente", concluido: false },
-      { id: "c2", titulo: "Realizar vistoria técnica", concluido: false },
-      { id: "c3", titulo: "Elaborar projeto elétrico", concluido: false },
-      { id: "c4", titulo: "Registrar ART", concluido: false },
-      { id: "c5", titulo: "Solicitar homologação", concluido: false },
+      { id: 'c1', titulo: 'Solicitar documentação do cliente', concluido: false },
+      { id: 'c2', titulo: 'Realizar vistoria técnica', concluido: false },
+      { id: 'c3', titulo: 'Elaborar projeto elétrico', concluido: false },
+      { id: 'c4', titulo: 'Registrar ART', concluido: false },
+      { id: 'c5', titulo: 'Solicitar homologação', concluido: false },
     ],
     documentos: [],
     custos: { orcado: orc.valor_total, real: 0, itens: [] },
     timeline: [
-      {
-        id: `t-${Date.now()}`,
-        data: new Date().toISOString(),
-        titulo: "Projeto Iniciado",
-        descricao: "Orçamento aprovado e projeto criado",
-      },
+      { id: `t-${Date.now()}`, data: new Date().toISOString(), titulo: 'Projeto Iniciado', descricao: 'Orçamento aprovado e projeto criado' },
     ],
   };
 
-  // 5) insert
-  const { data: proj, error: pErr } = await supabase
-    .from("projetos")
-    .insert(payload)
-    .select("id, numero, kanban_column_id, status")
-    .single();
-  if (pErr) throw pErr;
-
-  return proj;
+  const projRes = await fetch('/api/projetos', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!projRes.ok) throw new Error('Falha ao criar projeto');
+  return await projRes.json();
 }
-
 export default function Orcamentos() {
   const { orcamentos, isLoading, addOrcamento, updateOrcamento, deleteOrcamento } = useOrcamentos();
   const { modulos, inversores } = useEquipamentos();
@@ -248,7 +207,7 @@ export default function Orcamentos() {
     const modulosCalc = Math.ceil(kwpCalc / potenciaPlaca);
 
     setFormData((prev) => ({ ...prev, qtd_modulos: modulosCalc }));
-    toast.success("Dimensionamento calculado!");
+    toast.success(`Or�amento aprovado! Projeto ${proj.numero || proj.id} criado.`);
   };
 
   const recalcularTotal = () => {
@@ -329,577 +288,583 @@ export default function Orcamentos() {
   };
 
   const handleAprovarOrcamento = async (orc: Orcamento) => {
+  try {
+    // evita recriar se j� existe projeto vinculado (consulta BFF)
     try {
-      // evita recriar se já existe projeto vinculado (opcional: cheque por orcamento_id)
-      const { data: exists, error: qErr } = await supabase
-        .from("projetos")
-        .select("id")
-        .eq("orcamento_id", orc.id)
-        .maybeSingle();
-      if (qErr) throw qErr;
-      if (exists?.id) {
-        toast.info("Este orçamento já gerou um projeto.");
-        // ainda assim marca Aprovado
-        await updateOrcamento({ id: orc.id, status: "Aprovado" });
-        return;
+      const resp = await fetch('/api/projetos', { credentials: 'include' });
+      if (resp.ok) {
+        const list = await resp.json();
+        const exists = Array.isArray(list) && list.some((p: any) => p.orcamento_id === orc.id);
+        if (exists) {
+          toast.info('Este or�amento j� gerou um projeto.');
+          await updateOrcamento({ id: orc.id, status: 'Aprovado' });
+          return;
+        }
       }
+    } catch {}
 
-      // 1) marca orçamento como Aprovado
-      await updateOrcamento({ id: orc.id, status: "Aprovado" });
+    // 1) marca or�amento como Aprovado
+    await updateOrcamento({ id: orc.id, status: 'Aprovado' });
 
-      // 2) cria projeto já na coluna correta
-      const proj = await criarProjetoAPartirDoOrcamento(orc);
+    // 2) cria projeto j� na coluna correta
+    const proj = await criarProjetoAPartirDoOrcamentoBff(orc);
 
-      toast.success(`Orçamento aprovado! Projeto ${proj.numero} criado.`);
-      setPanelOpen(false);
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e?.message || "Falha ao aprovar orçamento/criar projeto.");
-    }
-  };
+    toast.success(`Or�amento aprovado! Projeto ${proj.numero || proj.id} criado.`);
+    setPanelOpen(false);
+  } catch (e: any) {
+    console.error(e);
+    toast.error(e?.message || 'Falha ao aprovar or�amento/criar projeto.');
+  }
+};
 
 
 
-  const kanbanColumns: KanbanColumnData[] = [
-    {
-      id: "Rascunho",
-      title: "Rascunho",
-      color: "#6b7280",
-      items: orcamentos
-        .filter((orc) => orc.status === "Rascunho")
-        .map((orc) => ({
-          id: orc.id,
-          title: orc.numero,
-          subtitle: orc.cliente_nome || "",
-          badges: [
-            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
-            {
-              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido",
-              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary"
-            },
-          ],
-          metadata: {
-            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
-            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
-            dono: "Sistema",
+const kanbanColumns: KanbanColumnData[] = [
+  {
+    id: "Rascunho",
+    title: "Rascunho",
+    color: "#6b7280",
+    items: orcamentos
+      .filter((orc) => orc.status === "Rascunho")
+      .map((orc) => ({
+        id: orc.id,
+        title: orc.numero,
+        subtitle: orc.cliente_nome || "",
+        badges: [
+          { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
+          {
+            label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido",
+            variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary"
           },
-        })),
-    },
-    {
-      id: "Enviado",
-      title: "Enviado",
-      color: "#3b82f6",
-      items: orcamentos
-        .filter((orc) => orc.status === "Enviado")
-        .map((orc) => ({
-          id: orc.id,
-          title: orc.numero,
-          subtitle: orc.cliente_nome || "",
-          badges: [
-            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
-            {
-              label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido",
-              variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary"
-            },
-          ],
-          metadata: {
-            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
-            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
-            dono: "Sistema",
+        ],
+        metadata: {
+          total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+          validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+          dono: "Sistema",
+        },
+      })),
+  },
+  {
+    id: "Enviado",
+    title: "Enviado",
+    color: "#3b82f6",
+    items: orcamentos
+      .filter((orc) => orc.status === "Enviado")
+      .map((orc) => ({
+        id: orc.id,
+        title: orc.numero,
+        subtitle: orc.cliente_nome || "",
+        badges: [
+          { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
+          {
+            label: (orc.validade && new Date(orc.validade) < new Date()) ? "Expirado" : "Válido",
+            variant: (orc.validade && new Date(orc.validade) < new Date()) ? "destructive" : "secondary"
           },
-        })),
-    },
-    {
-      id: "Aprovado",
-      title: "Aprovado",
-      color: "#10b981",
-      items: orcamentos
-        .filter((orc) => orc.status === "Aprovado")
-        .map((orc) => ({
-          id: orc.id,
-          title: orc.numero,
-          subtitle: orc.cliente_nome || "",
-          badges: [
-            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
-            { label: "✓ Aprovado", variant: "secondary" },
-          ],
-          metadata: {
-            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
-            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
-            dono: "Sistema",
-          },
-        })),
-    },
-    {
-      id: "Reprovado",
-      title: "Reprovado",
-      color: "#ef4444",
-      items: orcamentos
-        .filter((orc) => orc.status === "Reprovado")
-        .map((orc) => ({
-          id: orc.id,
-          title: orc.numero,
-          subtitle: orc.cliente_nome || "",
-          badges: [
-            { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
-            { label: "✗ Reprovado", variant: "destructive" },
-          ],
-          metadata: {
-            total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
-            validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
-            dono: "Sistema",
-          },
-        })),
-    },
-  ];
+        ],
+        metadata: {
+          total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+          validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+          dono: "Sistema",
+        },
+      })),
+  },
+  {
+    id: "Aprovado",
+    title: "Aprovado",
+    color: "#10b981",
+    items: orcamentos
+      .filter((orc) => orc.status === "Aprovado")
+      .map((orc) => ({
+        id: orc.id,
+        title: orc.numero,
+        subtitle: orc.cliente_nome || "",
+        badges: [
+          { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
+          { label: "✓ Aprovado", variant: "secondary" },
+        ],
+        metadata: {
+          total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+          validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+          dono: "Sistema",
+        },
+      })),
+  },
+  {
+    id: "Reprovado",
+    title: "Reprovado",
+    color: "#ef4444",
+    items: orcamentos
+      .filter((orc) => orc.status === "Reprovado")
+      .map((orc) => ({
+        id: orc.id,
+        title: orc.numero,
+        subtitle: orc.cliente_nome || "",
+        badges: [
+          { label: `${(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp`, variant: "outline" },
+          { label: "✗ Reprovado", variant: "destructive" },
+        ],
+        metadata: {
+          total: `R$ ${orc.valor_total.toLocaleString("pt-BR")}`,
+          validade: orc.validade ? new Date(orc.validade).toLocaleDateString("pt-BR") : "N/A",
+          dono: "Sistema",
+        },
+      })),
+  },
+];
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Orçamentos</h1>
-        <div className="flex items-center gap-4">
-          <ViewToggle view={view} onViewChange={setView} />
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={() => handleOpenDialog()}>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Orçamento
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>{editingOrc ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit}>
-                <Tabs defaultValue="cliente">
-                  <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="cliente">Cliente/Site</TabsTrigger>
-                    <TabsTrigger value="dimensionamento">Dimensionamento</TabsTrigger>
-                    <TabsTrigger value="precificacao">Precificação</TabsTrigger>
-                    <TabsTrigger value="simulacao">Simulação</TabsTrigger>
-                  </TabsList>
+return (
+  <div className="space-y-6">
+    <div className="flex items-center justify-between">
+      <h1 className="text-3xl font-bold">Orçamentos</h1>
+      <div className="flex items-center gap-4">
+        <ViewToggle view={view} onViewChange={setView} />
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={() => handleOpenDialog()}>
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Orçamento
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingOrc ? "Editar Orçamento" : "Novo Orçamento"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit}>
+              <Tabs defaultValue="cliente">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="cliente">Cliente/Site</TabsTrigger>
+                  <TabsTrigger value="dimensionamento">Dimensionamento</TabsTrigger>
+                  <TabsTrigger value="precificacao">Precificação</TabsTrigger>
+                  <TabsTrigger value="simulacao">Simulação</TabsTrigger>
+                </TabsList>
 
-                  <TabsContent value="cliente" className="space-y-4 mt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Cliente *</Label>
-                        <Input value={formData.cliente_nome || ""} onChange={(e) => setFormData({ ...formData, cliente_nome: e.target.value })} required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Tipo de Telhado</Label>
-                        <Select value={formData.tipoTelhado} onValueChange={(v) => setFormData({ ...formData, tipoTelhado: v })}>
-                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Cerâmico">Cerâmico</SelectItem>
-                            <SelectItem value="Metálico">Metálico</SelectItem>
-                            <SelectItem value="Fibrocimento">Fibrocimento</SelectItem>
-                            <SelectItem value="Laje">Laje</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Fase</Label>
-                        <Select value={formData.fase} onValueChange={(v) => setFormData({ ...formData, fase: v })}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Monofásico">Monofásico</SelectItem>
-                            <SelectItem value="Bifásico">Bifásico</SelectItem>
-                            <SelectItem value="Trifásico">Trifásico</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Dono</Label>
-
-                        {usuarioLogado.tipo === "vendedor" ? (
-                          // 👇 Se for vendedor, exibe nome fixo e salva o ID
-                          <Input
-                            value={usuarioLogado.nome}
-                            disabled
-                            className="bg-gray-100 dark:bg-gray-800"
-                            onChange={() => { }}
-                          />
-                        ) : (
-                          // 👇 Admin ou Gestor veem o Select normalmente
-                          <Select
-                            value={formData.dono}
-                            onValueChange={(v) => {
-                              const userSelecionado = todosUsuarios.find((u) => u.nome === v);
-                              setFormData({
-                                ...formData,
-                                dono: v,
-                                responsavel_id: userSelecionado ? userSelecionado.id : null,
-                              });
-                            }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Selecione" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {getOpcoesDono().map((user) => (
-                                <SelectItem key={user.id} value={user.nome}>
-                                  {user.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-
-
-                      </div>
+                <TabsContent value="cliente" className="space-y-4 mt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Cliente *</Label>
+                      <Input value={formData.cliente_nome || ""} onChange={(e) => setFormData({ ...formData, cliente_nome: e.target.value })} required />
                     </div>
                     <div className="space-y-2">
-                      <Label>Observações</Label>
-                      <Input value={formData.observacoes} onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })} />
+                      <Label>Tipo de Telhado</Label>
+                      <Select value={formData.tipoTelhado} onValueChange={(v) => setFormData({ ...formData, tipoTelhado: v })}>
+                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Cerâmico">Cerâmico</SelectItem>
+                          <SelectItem value="Metálico">Metálico</SelectItem>
+                          <SelectItem value="Fibrocimento">Fibrocimento</SelectItem>
+                          <SelectItem value="Laje">Laje</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </TabsContent>
+                    <div className="space-y-2">
+                      <Label>Fase</Label>
+                      <Select value={formData.fase} onValueChange={(v) => setFormData({ ...formData, fase: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Monofásico">Monofásico</SelectItem>
+                          <SelectItem value="Bifásico">Bifásico</SelectItem>
+                          <SelectItem value="Trifásico">Trifásico</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Dono</Label>
 
-                  <TabsContent value="dimensionamento" className="space-y-4 mt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Conta (R$)</Label>
+                      {usuarioLogado.tipo === "vendedor" ? (
+                        // 👇 Se for vendedor, exibe nome fixo e salva o ID
                         <Input
-                          type="number"
-                          value={formData.geracao_kwh || ""}
-                          onChange={(e) => setFormData({ ...formData, conta: parseFloat(e.target.value) || undefined })}
+                          value={usuarioLogado.nome}
+                          disabled
+                          className="bg-gray-100 dark:bg-gray-800"
+                          onChange={() => { }}
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Consumo (kWh/mês)</Label>
-                        <Input
-                          type="number"
-                          value={formData.consumo || ""}
-                          onChange={(e) => setFormData({ ...formData, consumo: parseFloat(e.target.value) || undefined })}
-                        />
-                      </div>
-                    </div>
-                    <Button type="button" variant="secondary" onClick={calcularDimensionamento}>Calcular Dimensionamento</Button>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>kWp Recomendado</Label>
-                        <Input type="number" value={formData.kwp} onChange={(e) => setFormData({ ...formData, kwp: parseFloat(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Qtd de Placas</Label>
-                        <Input type="number" value={formData.qtd_modulos || 0} onChange={(e) => setFormData({ ...formData, qtd_modulos: parseInt(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Modelo de Placa</Label>
-                        <Select value={formData.modelo_modulo || ""} onValueChange={(v) => setFormData({ ...formData, modelo_modulo: v })}>
-                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      ) : (
+                        // 👇 Admin ou Gestor veem o Select normalmente
+                        <Select
+                          value={formData.dono}
+                          onValueChange={(v) => {
+                            const userSelecionado = todosUsuarios.find((u) => u.nome === v);
+                            setFormData({
+                              ...formData,
+                              dono: v,
+                              responsavel_id: userSelecionado ? userSelecionado.id : null,
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
                           <SelectContent>
-                            {catalogoPlacas.map((p) => (
-                              <SelectItem key={p.id} value={p.nome}>{p.nome}</SelectItem>
+                            {getOpcoesDono().map((user) => (
+                              <SelectItem key={user.id} value={user.nome}>
+                                {user.nome}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Inversor</Label>
-                        <Select value={formData.inversor} onValueChange={(v) => setFormData({ ...formData, inversor: v })}>
-                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>
-                            {catalogoInversores.map((inv) => (
-                              <SelectItem key={inv.id} value={inv.nome}>{inv.nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="estruturaSolo"
-                        checked={formData.estruturaSolo}
-                        onCheckedChange={(checked) => setFormData({ ...formData, estruturaSolo: !!checked })}
-                      />
-                      <Label htmlFor="estruturaSolo" className="cursor-pointer">
-                        Estrutura de solo (adiciona R$ {parametros.adicionalEstrutSoloPorPlaca.toFixed(2)} por placa)
-                      </Label>
-                    </div>
-                  </TabsContent>
+                      )}
 
-                  <TabsContent value="precificacao" className="space-y-4 mt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Preço Base (R$)</Label>
-                        <Input type="number" value={formData.precoBase} onChange={(e) => setFormData({ ...formData, precoBase: parseFloat(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Mão de Obra (R$)</Label>
-                        <Input type="number" value={formData.maoDeObra} onChange={(e) => setFormData({ ...formData, maoDeObra: parseFloat(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Frete (R$)</Label>
-                        <Input type="number" value={formData.frete} onChange={(e) => setFormData({ ...formData, frete: parseFloat(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Adicionais (R$)</Label>
-                        <Input type="number" value={formData.custo_estrutura_solo || 0} onChange={(e) => setFormData({ ...formData, custo_estrutura_solo: parseFloat(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Desconto (R$)</Label>
-                        <Input type="number" value={formData.desconto} onChange={(e) => setFormData({ ...formData, desconto: parseFloat(e.target.value) || 0 })} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Markup</Label>
-                        <Input type="number" step="0.01" value={formData.markup} onChange={(e) => setFormData({ ...formData, markup: parseFloat(e.target.value) || 1 })} />
-                      </div>
+
                     </div>
-                    <Button type="button" variant="secondary" onClick={recalcularTotal}>Recalcular Total</Button>
-                    <div className="p-4 bg-card border rounded-lg">
-                      <p className="text-sm text-muted-foreground">Total do Orçamento</p>
-                      <p className="text-3xl font-bold">R$ {(formData.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                    </div>
-                  </TabsContent>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Observações</Label>
+                    <Input value={formData.observacoes} onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })} />
+                  </div>
+                </TabsContent>
 
-                  <TabsContent value="simulacao" className="space-y-4 mt-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 mb-4">
-                        <Label>Taxa de Juros Mensal: {(parametros.taxaJurosMes * 100).toFixed(2)}%</Label>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-sm">
-                              <p className="font-mono text-xs">Fórmula: PV = PMT × (1 - (1+i)^-n) / i</p>
-                              <p className="text-xs mt-1">onde i = taxa mensal, n = prazo</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      {parametros.prazos.map((prazo) => {
-                        const { pmt, pv } = calcularSimulacao(prazo);
-                        return (
-                          <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
-                            <div>
-                              <p className="font-medium">{prazo}x</p>
-                              <p className="text-sm text-muted-foreground">Valor Presente: R$ {pv.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                            </div>
-                            <p className="text-xl font-bold">R$ {pmt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </TabsContent>
-                </Tabs>
-
-                <DialogFooter className="mt-6">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-                  <Button type="submit">Salvar</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Buscar por cliente ou número..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
-      </div>
-
-      {view === "kanban" ? (
-        <KanbanBoard
-          columns={kanbanColumns}
-          onDragEnd={handleDragEnd}
-          onCardClick={handleCardClick}
-        />
-      ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nº</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Sistema (kWp)</TableHead>
-                <TableHead>Placas</TableHead>
-                <TableHead>Estrutura Solo</TableHead>
-                <TableHead>Total (R$)</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Validade</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredOrcamentos.map((orc) => (
-                <TableRow key={orc.id}>
-                  <TableCell className="font-medium">{orc.numero}</TableCell>
-                  <TableCell>{orc.cliente_nome}</TableCell>
-                  <TableCell>{(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp</TableCell>
-                  <TableCell>{orc.qtd_modulos} un.</TableCell>
-                  <TableCell>{orc.estrutura_solo ? "Sim" : "Não"}</TableCell>
-                  <TableCell>R$ {orc.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</TableCell>
-                  <TableCell>{getStatusBadge(orc.status)}</TableCell>
-                  <TableCell>{orc.validade}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(orc)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(orc.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {selectedOrcamento && (
-        <SidePanel
-          open={panelOpen}
-          onClose={() => setPanelOpen(false)}
-          title={selectedOrcamento.numero}
-          description={selectedOrcamento.cliente_nome || ""}
-          tabs={[
-            {
-              id: "detalhes",
-              label: "Detalhes",
-              content: (
-                <div className="space-y-4">
+                <TabsContent value="dimensionamento" className="space-y-4 mt-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Cliente</p>
-                      <p className="font-medium">{selectedOrcamento.cliente_nome}</p>
+                    <div className="space-y-2">
+                      <Label>Conta (R$)</Label>
+                      <Input
+                        type="number"
+                        value={formData.geracao_kwh || ""}
+                        onChange={(e) => setFormData({ ...formData, conta: parseFloat(e.target.value) || undefined })}
+                      />
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Status</p>
-                      {getStatusBadge(selectedOrcamento.status)}
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Sistema</p>
-                      <p className="font-medium">{((selectedOrcamento.qtd_modulos || 0) * (selectedOrcamento.potencia_modulo_w || 0) / 1000).toFixed(2)} kWp ({selectedOrcamento.qtd_modulos} placas)</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Validade</p>
-                      <p className="font-medium">{selectedOrcamento.validade ? new Date(selectedOrcamento.validade).toLocaleDateString("pt-BR") : "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Modelo da Placa</p>
-                      <p className="font-medium">{selectedOrcamento.modelo_modulo}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Inversor</p>
-                      <p className="font-medium">{selectedOrcamento.inversor_kw ? `${selectedOrcamento.inversor_kw} kW` : "N/A"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Tipo de Telhado</p>
-                      <p className="font-medium">N/A</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Fase</p>
-                      <p className="font-medium">N/A</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Estrutura Solo</p>
-                      <p className="font-medium">{selectedOrcamento.estrutura_solo ? "Sim" : "Não"}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Responsável</p>
-                      <p className="font-medium">Sistema</p>
+                    <div className="space-y-2">
+                      <Label>Consumo (kWh/mês)</Label>
+                      <Input
+                        type="number"
+                        value={formData.consumo || ""}
+                        onChange={(e) => setFormData({ ...formData, consumo: parseFloat(e.target.value) || undefined })}
+                      />
                     </div>
                   </div>
-                  <div className="p-4 bg-card border rounded-lg">
-                    <p className="text-sm text-muted-foreground">Valor Total</p>
-                    <p className="text-3xl font-bold">R$ {selectedOrcamento.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                  </div>
-                  {false && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Observações</p>
-                      <p className="text-sm">{selectedOrcamento.observacoes}</p>
+                  <Button type="button" variant="secondary" onClick={calcularDimensionamento}>Calcular Dimensionamento</Button>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>kWp Recomendado</Label>
+                      <Input type="number" value={formData.kwp} onChange={(e) => setFormData({ ...formData, kwp: parseFloat(e.target.value) || 0 })} />
                     </div>
-                  )}
-                </div>
-              ),
-            },
-            {
-              id: "simulacoes",
-              label: "Simulações",
-              content: (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Label>Taxa de Juros Mensal: {(parametros.taxaJurosMes * 100).toFixed(2)}%</Label>
+                    <div className="space-y-2">
+                      <Label>Qtd de Placas</Label>
+                      <Input type="number" value={formData.qtd_modulos || 0} onChange={(e) => setFormData({ ...formData, qtd_modulos: parseInt(e.target.value) || 0 })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Modelo de Placa</Label>
+                      <Select value={formData.modelo_modulo || ""} onValueChange={(v) => setFormData({ ...formData, modelo_modulo: v })}>
+                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>
+                          {catalogoPlacas.map((p) => (
+                            <SelectItem key={p.id} value={p.nome}>{p.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Inversor</Label>
+                      <Select value={formData.inversor} onValueChange={(v) => setFormData({ ...formData, inversor: v })}>
+                        <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                        <SelectContent>
+                          {catalogoInversores.map((inv) => (
+                            <SelectItem key={inv.id} value={inv.nome}>{inv.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  {parametros.prazos.map((prazo) => {
-                    const i = parametros.taxaJurosMes;
-                    const n = prazo;
-                    const pv = selectedOrcamento.valor_total;
-                    const pmt = (pv * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1);
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="estruturaSolo"
+                      checked={formData.estruturaSolo}
+                      onCheckedChange={(checked) => setFormData({ ...formData, estruturaSolo: !!checked })}
+                    />
+                    <Label htmlFor="estruturaSolo" className="cursor-pointer">
+                      Estrutura de solo (adiciona R$ {parametros.adicionalEstrutSoloPorPlaca.toFixed(2)} por placa)
+                    </Label>
+                  </div>
+                </TabsContent>
 
-                    return (
-                      <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
-                        <div>
-                          <p className="font-medium">{prazo}x</p>
-                          <p className="text-sm text-muted-foreground">
-                            Total: R$ {pv.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                          </p>
+                <TabsContent value="precificacao" className="space-y-4 mt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Preço Base (R$)</Label>
+                      <Input type="number" value={formData.precoBase} onChange={(e) => setFormData({ ...formData, precoBase: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Mão de Obra (R$)</Label>
+                      <Input type="number" value={formData.maoDeObra} onChange={(e) => setFormData({ ...formData, maoDeObra: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Frete (R$)</Label>
+                      <Input type="number" value={formData.frete} onChange={(e) => setFormData({ ...formData, frete: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Adicionais (R$)</Label>
+                      <Input type="number" value={formData.custo_estrutura_solo || 0} onChange={(e) => setFormData({ ...formData, custo_estrutura_solo: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Desconto (R$)</Label>
+                      <Input type="number" value={formData.desconto} onChange={(e) => setFormData({ ...formData, desconto: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Markup</Label>
+                      <Input type="number" step="0.01" value={formData.markup} onChange={(e) => setFormData({ ...formData, markup: parseFloat(e.target.value) || 1 })} />
+                    </div>
+                  </div>
+                  <Button type="button" variant="secondary" onClick={recalcularTotal}>Recalcular Total</Button>
+                  <div className="p-4 bg-card border rounded-lg">
+                    <p className="text-sm text-muted-foreground">Total do Orçamento</p>
+                    <p className="text-3xl font-bold">R$ {(formData.valor_total || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="simulacao" className="space-y-4 mt-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Label>Taxa de Juros Mensal: {(parametros.taxaJurosMes * 100).toFixed(2)}%</Label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-sm">
+                            <p className="font-mono text-xs">Fórmula: PV = PMT × (1 - (1+i)^-n) / i</p>
+                            <p className="text-xs mt-1">onde i = taxa mensal, n = prazo</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    {parametros.prazos.map((prazo) => {
+                      const { pmt, pv } = calcularSimulacao(prazo);
+                      return (
+                        <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
+                          <div>
+                            <p className="font-medium">{prazo}x</p>
+                            <p className="text-sm text-muted-foreground">Valor Presente: R$ {pv.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                          </div>
+                          <p className="text-xl font-bold">R$ {pmt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês</p>
                         </div>
-                        <p className="text-xl font-bold">
-                          R$ {pmt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês
+                      );
+                    })}
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <DialogFooter className="mt-6">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+                <Button type="submit">Salvar</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Input placeholder="Buscar por cliente ou número..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
+    </div>
+
+    {view === "kanban" ? (
+      <KanbanBoard
+        columns={kanbanColumns}
+        onDragEnd={handleDragEnd}
+        onCardClick={handleCardClick}
+      />
+    ) : (
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nº</TableHead>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Sistema (kWp)</TableHead>
+              <TableHead>Placas</TableHead>
+              <TableHead>Estrutura Solo</TableHead>
+              <TableHead>Total (R$)</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Validade</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredOrcamentos.map((orc) => (
+              <TableRow key={orc.id}>
+                <TableCell className="font-medium">{orc.numero}</TableCell>
+                <TableCell>{orc.cliente_nome}</TableCell>
+                <TableCell>{(((orc.qtd_modulos || 0) * (orc.potencia_modulo_w || 0)) / 1000).toFixed(2)} kWp</TableCell>
+                <TableCell>{orc.qtd_modulos} un.</TableCell>
+                <TableCell>{orc.estrutura_solo ? "Sim" : "Não"}</TableCell>
+                <TableCell>R$ {orc.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</TableCell>
+                <TableCell>{getStatusBadge(orc.status)}</TableCell>
+                <TableCell>{orc.validade}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(orc)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(orc.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    )}
+
+    {selectedOrcamento && (
+      <SidePanel
+        open={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        title={selectedOrcamento.numero}
+        description={selectedOrcamento.cliente_nome || ""}
+        tabs={[
+          {
+            id: "detalhes",
+            label: "Detalhes",
+            content: (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Cliente</p>
+                    <p className="font-medium">{selectedOrcamento.cliente_nome}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    {getStatusBadge(selectedOrcamento.status)}
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Sistema</p>
+                    <p className="font-medium">{((selectedOrcamento.qtd_modulos || 0) * (selectedOrcamento.potencia_modulo_w || 0) / 1000).toFixed(2)} kWp ({selectedOrcamento.qtd_modulos} placas)</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Validade</p>
+                    <p className="font-medium">{selectedOrcamento.validade ? new Date(selectedOrcamento.validade).toLocaleDateString("pt-BR") : "N/A"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Modelo da Placa</p>
+                    <p className="font-medium">{selectedOrcamento.modelo_modulo}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Inversor</p>
+                    <p className="font-medium">{selectedOrcamento.inversor_kw ? `${selectedOrcamento.inversor_kw} kW` : "N/A"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tipo de Telhado</p>
+                    <p className="font-medium">N/A</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Fase</p>
+                    <p className="font-medium">N/A</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Estrutura Solo</p>
+                    <p className="font-medium">{selectedOrcamento.estrutura_solo ? "Sim" : "Não"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Responsável</p>
+                    <p className="font-medium">Sistema</p>
+                  </div>
+                </div>
+                <div className="p-4 bg-card border rounded-lg">
+                  <p className="text-sm text-muted-foreground">Valor Total</p>
+                  <p className="text-3xl font-bold">R$ {selectedOrcamento.valor_total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                </div>
+                {false && (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-2">Observações</p>
+                    <p className="text-sm">{selectedOrcamento.observacoes}</p>
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            id: "simulacoes",
+            label: "Simulações",
+            content: (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 mb-4">
+                  <Label>Taxa de Juros Mensal: {(parametros.taxaJurosMes * 100).toFixed(2)}%</Label>
+                </div>
+                {parametros.prazos.map((prazo) => {
+                  const i = parametros.taxaJurosMes;
+                  const n = prazo;
+                  const pv = selectedOrcamento.valor_total;
+                  const pmt = (pv * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1);
+
+                  return (
+                    <div key={prazo} className="flex items-center justify-between p-3 bg-card border rounded-lg">
+                      <div>
+                        <p className="font-medium">{prazo}x</p>
+                        <p className="text-sm text-muted-foreground">
+                          Total: R$ {pv.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                         </p>
                       </div>
-                    );
-                  })}
-                </div>
-              ),
-            },
-            {
-              id: "acoes",
-              label: "Ações",
-              content: (
-                <div className="space-y-4">
+                      <p className="text-xl font-bold">
+                        R$ {pmt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/mês
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          },
+          {
+            id: "acoes",
+            label: "Ações",
+            content: (
+              <div className="space-y-4">
+                <Button
+                  className="w-full"
+                  onClick={() => handleOpenDialog(selectedOrcamento)}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Editar Orçamento
+                </Button>
+
+                {selectedOrcamento.status !== "Aprovado" && (
                   <Button
                     className="w-full"
-                    onClick={() => handleOpenDialog(selectedOrcamento)}
+                    variant="secondary"
+                    onClick={() => handleAprovarOrcamento(selectedOrcamento)}
                   >
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Editar Orçamento
+                    Aprovar Orçamento
                   </Button>
+                )}
 
-                  {selectedOrcamento.status !== "Aprovado" && (
-                    <Button
-                      className="w-full"
-                      variant="secondary"
-                      onClick={() => handleAprovarOrcamento(selectedOrcamento)}
-                    >
-                      Aprovar Orçamento
-                    </Button>
-                  )}
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => {
+                    const url = `https://wa.me/${parametros.numeroWhatsApp}?text=Olá! Gostaria de falar sobre o orçamento ${selectedOrcamento.numero}`;
+                    window.open(url, "_blank");
+                  }}
+                >
+                  Enviar via WhatsApp
+                </Button>
 
-                  <Button
-                    className="w-full"
-                    variant="outline"
-                    onClick={() => {
-                      const url = `https://wa.me/${parametros.numeroWhatsApp}?text=Olá! Gostaria de falar sobre o orçamento ${selectedOrcamento.numero}`;
-                      window.open(url, "_blank");
-                    }}
-                  >
-                    Enviar via WhatsApp
-                  </Button>
-
-                  <Button
-                    className="w-full"
-                    variant="destructive"
-                    onClick={() => {
-                      if (confirm("Excluir este orçamento?")) {
-                        deleteOrcamento(selectedOrcamento.id);
-                        setPanelOpen(false);
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Excluir Orçamento
-                  </Button>
-                </div>
-              ),
-            },
-          ]}
-        />
-      )}
-    </div>
-  );
+                <Button
+                  className="w-full"
+                  variant="destructive"
+                  onClick={() => {
+                    if (confirm("Excluir este orçamento?")) {
+                      deleteOrcamento(selectedOrcamento.id);
+                      setPanelOpen(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir Orçamento
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+      />
+    )}
+  </div>
+);
 }
+
+
+
+
+
+

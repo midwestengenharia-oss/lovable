@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
+﻿import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Calculator,
@@ -30,7 +30,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useTheme } from "@/contexts/ThemeContext";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/sonner";
 import logoMoreiraLight from "@/assets/logo-moreira.png";
 import logoMoreiraDark from "@/assets/logo-moreira-branco.png";
@@ -39,7 +38,7 @@ import { useEffect, useMemo } from "react";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { usePermissoes } from "@/hooks/usePermissoes";
 
-// ====== mesma convenção de módulos usada na tabela `permissoes`
+// ====== mesma convenÃ§Ã£o de módulos usada na tabela `permissoes`
 type ModuloId =
   | "dashboard"
   | "propostas"
@@ -56,7 +55,7 @@ type ModuloId =
   | "kanban-admin"
   | "kanban-forms";
 
-// Itens do menu com o id do módulo correspondente
+// Itens do menu com o id do mÃ³dulo correspondente
 const menuItems: Array<{ title: string; url: string; icon: any; modulo: ModuloId }> = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, modulo: "dashboard" },
   { title: "Propostas", url: "/propostas", icon: Calculator, modulo: "propostas" },
@@ -72,13 +71,13 @@ const menuItems: Array<{ title: string; url: string; icon: any; modulo: ModuloId
   { title: "Parâmetros", url: "/parametros", icon: Settings, modulo: "parametros" },
 ];
 
-// Grupo Admin (Kanban) — mapeado para módulos próprios
+// Grupo Admin (Kanban) â€” mapeado para módulos prÃ³prios
 const adminItems: Array<{ title: string; url: string; icon: any; modulo: ModuloId }> = [
   { title: "Kanban (Admin)", url: "/admin/kanban", icon: Columns3, modulo: "kanban-admin" },
   { title: "Form. da Fase", url: "/admin/kanban/forms", icon: ListChecks, modulo: "kanban-forms" },
 ];
 
-// Fallback de permissões por perfil (apenas campo "visualizar" importa aqui)
+// Fallback de permissÃµes por perfil (apenas campo "visualizar" importa aqui)
 const getPermissoesDefault = (perfil: "admin" | "gestor" | "vendedor") => {
   const allTrue = (mods: ModuloId[]) => new Set(mods);
   if (perfil === "admin") {
@@ -90,7 +89,7 @@ const getPermissoesDefault = (perfil: "admin" | "gestor" | "vendedor") => {
   if (perfil === "gestor") {
     return allTrue([
       "dashboard", "propostas", "crm", "clientes", "orcamentos", "projetos", "pos-venda", "cobrancas",
-      "gestao-faturas", "integracoes", // sem "usuarios"/"parametros" por padrão
+      "gestao-faturas", "integracoes", // sem "usuarios"/"parametros" por padrÃ£o
       "kanban-admin", "kanban-forms"
     ]);
   }
@@ -116,7 +115,7 @@ export function AppSidebar() {
       return getPermissoesDefault("admin");
     }
 
-    // Se vier algo do BD, usa o que está salvo
+    // Se vier algo do BD, usa o que estÃ¡ salvo
     if (permissoes && permissoes.length > 0) {
       const s = new Set<ModuloId>();
       for (const p of permissoes) {
@@ -141,12 +140,13 @@ export function AppSidebar() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
-      toast.success("Sessão encerrada com sucesso!");
-      navigate("/login");
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      toast.success("Sessao encerrada com sucesso!");
     } catch (error) {
       console.error(error);
-      toast.error("Erro ao encerrar sessão.");
+      toast.error("Erro ao encerrar sessao.");
+    } finally {
+      navigate("/login");
     }
   };
 
@@ -262,3 +262,9 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+
+
+
+
+
+

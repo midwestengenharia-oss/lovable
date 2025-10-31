@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 
 export type Permissao = {
     modulo: string;
@@ -16,32 +15,21 @@ export function usePermissoes(userId?: string) {
         queryKey: ["permissoes", userId],
         enabled: !!userId,
         queryFn: async () => {
-            const { data, error } = await supabase
-                .from("permissoes")
-                .select("modulo, visualizar, criar, editar, excluir")
-                .eq("user_id", userId!);
-            if (error) throw error;
-            // retorna como dicionário por modulo (opcional)
-            return (data || []) as Permissao[];
+            const res = await fetch(`/api/permissoes?userId=${userId}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar permissões');
+            return (await res.json()) as Permissao[];
         },
     });
 
     const upsertPermissoes = useMutation({
         mutationFn: async (payload: { userId: string; permissoes: Permissao[] }) => {
-            // upsert em massa
-            const rows = payload.permissoes.map(p => ({
-                user_id: payload.userId,
-                modulo: p.modulo,
-                visualizar: p.visualizar,
-                criar: p.criar,
-                editar: p.editar,
-                excluir: p.excluir,
-                updated_at: new Date().toISOString(),
-            }));
-            const { error } = await supabase.from("permissoes").upsert(rows, {
-                onConflict: "user_id,modulo",
+            const res = await fetch(`/api/permissoes/${payload.userId}`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ permissoes: payload.permissoes }),
             });
-            if (error) throw error;
+            if (!res.ok) throw new Error('Falha ao salvar permissões');
         },
         onSuccess: (_data, vars) => {
             qc.invalidateQueries({ queryKey: ["permissoes", vars.userId] });

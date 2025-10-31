@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Plus, Search, Pencil, UserX, UserCheck } from "lucide-react";
+import { Plus, Search, Pencil, UserX, UserCheck, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { UsuarioDialog } from "@/components/UsuarioDialog";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -71,6 +71,37 @@ export default function Usuarios() {
   const handleEdit = (usuario: Usuario) => {
     setEditingUsuario(usuario);
     setDialogOpen(true);
+  };
+
+  const handleSetPassword = async (usuario: Usuario) => {
+    try {
+      const pwd = prompt(`Definir nova senha para ${usuario.nome} (mín. 6 caracteres):`);
+      if (!pwd) return;
+      if (pwd.length < 6) {
+        toast.error("A senha deve ter pelo menos 6 caracteres.");
+        return;
+      }
+      const confirm = prompt("Confirme a nova senha:");
+      if (confirm !== pwd) {
+        toast.error("As senhas não coincidem.");
+        return;
+      }
+      const res = await fetch(`/api/usuarios/${usuario.id}/password`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ password: pwd }),
+      });
+      if (!res.ok) {
+        let msg = 'Falha ao definir senha';
+        try { const j = await res.json(); if (j?.error) msg = String(j.error); } catch {}
+        toast.error(msg);
+        return;
+      }
+      toast.success('Senha definida com sucesso.');
+    } catch (e: any) {
+      toast.error('Erro ao definir senha.');
+    }
   };
 
   const handleNew = () => {
@@ -231,6 +262,14 @@ export default function Usuarios() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Definir senha"
+                        onClick={() => handleSetPassword(usuario)}
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleToggleStatus(usuario)}
                       >
                         {usuario.ativo ? (
@@ -257,3 +296,4 @@ export default function Usuarios() {
     </div>
   );
 }
+

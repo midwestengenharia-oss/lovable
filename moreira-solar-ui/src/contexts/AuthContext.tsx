@@ -1,153 +1,109 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+﻿import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+type Perfil = "admin" | "gestor" | "vendedor";
+
+interface SessionUser {
+  id: string;
+  nome: string;
+  email: string;
+  perfil: Perfil;
+  ativo?: boolean;
+  gestor_id?: string | null;
+}
+
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: SessionUser | null;
   loading: boolean;
+  // Keep signatures compatible where used
   signUp: (
     email: string,
-    password: string,
+    _password: string,
     nome: string,
-    perfil?: "admin" | "gestor" | "vendedor"
-  ) => Promise<{ error: any }>;
-  signIn: (
-    email: string,
-    password: string,
-    options?: { lembrar?: boolean }
-  ) => Promise<{ error: any }>;
+    perfil?: Perfil
+  ) => Promise<{ user?: { id: string }; error: any | null; tempPassword?: string }>;
+  signIn: () => Promise<{ error: any | null }>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 🔁 Monitora sessão do Supabase
   useEffect(() => {
-    const publicPaths = ["/auth", "/cadastroCliente"];
-    const currentPath = window.location.pathname;
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      // 🚫 Evita travar rotas públicas quando o usuário não está logado
-      if (!session && publicPaths.includes(currentPath)) {
-        setLoading(false);
-        return;
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/me", { credentials: "include" });
+        if (res.ok) {
+          const me = (await res.json()) as SessionUser;
+          if (mounted) setUser(me);
+        } else if (res.status === 401) {
+          if (mounted) setUser(null);
+        }
+      } catch (e) {
+        console.error("auth/session_load_failed", e);
+      } finally {
+        if (mounted) setLoading(false);
       }
-
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  // 🕒 Logout automático por inatividade (30 min)
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-
-    const resetTimer = () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
-        await supabase.auth.signOut();
-        toast.info("Sessão encerrada por inatividade.");
-        window.location.href = "/auth";
-      }, 30 * 60 * 1000); // 30 minutos
     };
-
-    window.addEventListener("mousemove", resetTimer);
-    window.addEventListener("keydown", resetTimer);
-    resetTimer();
-
+    load();
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener("mousemove", resetTimer);
-      window.removeEventListener("keydown", resetTimer);
+      mounted = false;
     };
   }, []);
 
-  // 🧩 Cadastro de usuário
   const signUp = async (
     email: string,
-    password: string,
+    _password: string,
     nome: string,
-    perfil: "admin" | "gestor" | "vendedor" = "vendedor"
-  ) => {
+    perfil: Perfil = "vendedor"
+  ): Promise<{ user?: { id: string }; error: any | null; tempPassword?: string }> => {
     try {
-      const redirectUrl = `${window.location.origin}/`;
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: { nome, perfil },
-        },
+      const res = await fetch("/api/usuarios", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, nome, perfil, password: _password }),
       });
-      return { error };
-    } catch (error: any) {
-      return { error };
+      if (!res.ok) {
+        let err: any = null;
+        try {
+          err = await res.json();
+        } catch {}
+        return { error: err || { message: "usuarios_create_failed" } };
+      }
+      const created = (await res.json()) as { id: string; tempPassword?: string };
+      toast.success("Usuario criado com sucesso.");
+      return { user: { id: created.id }, error: null, tempPassword: created.tempPassword };
+    } catch (e: any) {
+      return { error: e };
     }
   };
 
-  // 🧠 Login com controle de persistência ("lembrar-me")
-  const signIn = async (
-    email: string,
-    password: string,
-    options?: { lembrar?: boolean }
-  ) => {
+  const signIn = async (): Promise<{ error: any | null }> => {
     try {
-      const storage = options?.lembrar ? localStorage : sessionStorage;
-
-      // Limpa sessão anterior
-      await supabase.auth.signOut();
-
-      // ⚙️ Força storage coerente
-      Object.defineProperty(supabase.auth, "_storage", {
-        value: storage,
-        writable: true,
-      });
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      return { error };
-    } catch (error: any) {
-      return { error };
+      window.location.href = "/login";
+      return { error: null };
+    } catch (e: any) {
+      return { error: e };
     }
   };
 
-  // 🚪 Logout global
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error("Erro ao encerrar sessão.");
-    } else {
-      toast.success("Sessão encerrada com sucesso!");
-      window.location.href = "/auth";
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch (e) {
+      console.error("logout_failed", e);
+    } finally {
+      window.location.href = "/login";
     }
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, session, loading, signUp, signIn, signOut }}
-    >
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
@@ -160,3 +116,7 @@ export function useAuth() {
   }
   return context;
 }
+
+
+
+

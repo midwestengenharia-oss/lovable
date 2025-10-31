@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 
 export type KanbanBoard = { id: string; slug: string; name: string; entity: string; active: boolean };
 export type KanbanColumn = {
@@ -14,13 +13,10 @@ export function useKanbanBoardBySlug(slug: string) {
     return useQuery({
         queryKey: ["kanban", "board", slug],
         queryFn: async (): Promise<KanbanBoard | null> => {
-            const { data, error } = await supabase
-                .from("kanban_board")
-                .select("*")
-                .eq("slug", slug)
-                .maybeSingle();
-            if (error) throw error;
-            return data as KanbanBoard | null;
+            const res = await fetch('/api/kanban/boards', { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar boards');
+            const list = (await res.json()) as KanbanBoard[];
+            return list.find(b => b.slug === slug) || null;
         },
     });
 }
@@ -31,14 +27,10 @@ export function useKanbanColumns(boardId?: string) {
         enabled: !!boardId,
         queryKey: ["kanban", "columns", boardId],
         queryFn: async (): Promise<KanbanColumn[]> => {
-            const { data, error } = await supabase
-                .from("kanban_column")
-                .select("*")
-                .eq("board_id", boardId!)
-                .eq("active", true)
-                .order("ord");
-            if (error) throw error;
-            return data as KanbanColumn[];
+            const res = await fetch(`/api/kanban/columns?boardId=${boardId}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar colunas');
+            const cols = (await res.json()) as KanbanColumn[];
+            return cols.filter(c => c.active !== false).sort((a,b)=>a.ord-b.ord);
         },
     });
 }
@@ -49,12 +41,9 @@ export function useKanbanTransitions(boardId?: string) {
         enabled: !!boardId,
         queryKey: ["kanban", "transitions", boardId],
         queryFn: async (): Promise<KanbanTransition[]> => {
-            const { data, error } = await supabase
-                .from("kanban_transition")
-                .select("*")
-                .eq("board_id", boardId!);
-            if (error) throw error;
-            return data as KanbanTransition[];
+            const res = await fetch(`/api/kanban/transitions?boardId=${boardId}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar transições');
+            return (await res.json()) as KanbanTransition[];
         },
     });
 }

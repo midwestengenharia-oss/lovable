@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints
 import { toast } from 'sonner';
 
 export interface Equipamento {
@@ -19,15 +19,10 @@ export function useEquipamentos() {
   const { data: equipamentos = [], isLoading } = useQuery({
     queryKey: ['equipamentos'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('equipamentos')
-        .select('*')
-        .order('tipo', { ascending: true });
-
-      if (error) throw error;
-
-      // Mapear snake_case para camelCase
-      return (data || []).map(item => ({
+      const res = await fetch('/api/equipamentos', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar equipamentos');
+      const data = await res.json();
+      return (data || []).map((item: any) => ({
         id: item.id,
         tipo: item.tipo as 'modulo' | 'inversor',
         nome: item.nome,
@@ -41,20 +36,9 @@ export function useEquipamentos() {
   // Mutation para adicionar equipamento
   const addEquipamento = useMutation({
     mutationFn: async (equipamento: EquipamentoInput) => {
-      const { data, error } = await supabase
-        .from('equipamentos')
-        .insert({
-          tipo: equipamento.tipo,
-          nome: equipamento.nome,
-          potencia_w: equipamento.potenciaW,
-          valor: equipamento.valor,
-          ativo: equipamento.ativo
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/equipamentos', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(equipamento) });
+      if (!res.ok) throw new Error('Falha ao adicionar equipamento');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipamentos'] });
@@ -69,21 +53,9 @@ export function useEquipamentos() {
   // Mutation para atualizar equipamento
   const updateEquipamento = useMutation({
     mutationFn: async ({ id, ...equipamento }: Equipamento) => {
-      const { data, error } = await supabase
-        .from('equipamentos')
-        .update({
-          tipo: equipamento.tipo,
-          nome: equipamento.nome,
-          potencia_w: equipamento.potenciaW,
-          valor: equipamento.valor,
-          ativo: equipamento.ativo
-        })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/equipamentos/${id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(equipamento) });
+      if (!res.ok) throw new Error('Falha ao atualizar equipamento');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipamentos'] });
@@ -98,12 +70,8 @@ export function useEquipamentos() {
   // Mutation para deletar equipamento
   const deleteEquipamento = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('equipamentos')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/equipamentos/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao excluir equipamento');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipamentos'] });

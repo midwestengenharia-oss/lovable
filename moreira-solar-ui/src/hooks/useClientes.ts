@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from 'sonner';
 import { Cliente } from '@/types/supabase';
 
@@ -9,29 +8,22 @@ export function useClientes() {
   const { data: clientes = [], isLoading } = useQuery({
     queryKey: ['clientes'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('*')
-        .order('data_cadastro', { ascending: false });
-
-      if (error) throw error;
-      return data as Cliente[];
+      const res = await fetch('/api/clientes', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar clientes');
+      return (await res.json()) as Cliente[];
     }
   });
 
   const addCliente = useMutation({
-    mutationFn: async (cliente: Omit<Cliente, 'id' | 'user_id' | 'dataCadastro'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const { data, error } = await supabase
-        .from('clientes')
-        .insert([{ ...cliente, user_id: user.id }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+    mutationFn: async (cliente: any) => {
+      const res = await fetch('/api/clientes', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(cliente),
+      });
+      if (!res.ok) throw new Error('Falha ao adicionar cliente');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clientes'] });
@@ -44,14 +36,14 @@ export function useClientes() {
 
   const updateCliente = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Cliente> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('clientes')
-        .update(updates)
-        .eq('id', id)
-        .select()
-
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/clientes/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar cliente');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clientes'] });
@@ -64,12 +56,8 @@ export function useClientes() {
 
   const deleteCliente = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('clientes')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/clientes/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao remover cliente');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clientes'] });

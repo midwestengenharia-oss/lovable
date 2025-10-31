@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido do front: usar BFF endpoints
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,36 +24,27 @@ export default function MinhasFaturas() {
         return localStorage.getItem("theme") === "dark";
     });
 
-    useEffect(() => {
-        const clienteLogado = sessionStorage.getItem("cliente_logado");
-        if (!clienteLogado) {
-            toast.error("Você precisa fazer login!");
-            navigate("/login-cliente");
-            return;
-        }
-        const clienteData = JSON.parse(clienteLogado);
-        setCliente(clienteData);
-        carregarFaturas(clienteData.id);
-    }, [navigate]);
+    useEffect(() => { carregarFaturas(); }, [navigate]);
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", darkMode);
         localStorage.setItem("theme", darkMode ? "dark" : "light");
     }, [darkMode]);
 
-    const carregarFaturas = async (clienteId: string) => {
+    const carregarFaturas = async (_clienteId?: string) => {
         try {
-            const { data, error } = await supabase
-                .from("cobrancas")
-                .select("*")
-                .eq("cliente_id", clienteId)
-                .order("vencimento", { ascending: false });
-
-            if (error) throw error;
+            const res = await fetch('/api/cobrancas', { credentials: 'include' });
+            if (res.status === 401) {
+                toast.error('Faça login!');
+                navigate('/login-cliente');
+                return;
+            }
+            if (!res.ok) throw new Error('cobrancas_query_failed');
+            const data = await res.json();
             setFaturas(data || []);
         } catch (error: any) {
-            console.error("Erro ao carregar faturas:", error);
-            toast.error("Erro ao carregar faturas");
+            console.error('Erro ao carregar faturas:', error);
+            toast.error('Erro ao carregar faturas');
         } finally {
             setLoading(false);
         }
@@ -228,3 +219,4 @@ export default function MinhasFaturas() {
         </div>
     );
 }
+

@@ -1,11 +1,11 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import bcrypt from "bcryptjs";
+
 
 export default function LoginCliente() {
     const navigate = useNavigate();
@@ -25,47 +25,23 @@ export default function LoginCliente() {
             setLoading(true);
 
             // Buscar cliente por e-mail
-            const { data: cliente, error } = await supabase
-                .from("clientes")
-                .select("*")
-                .eq("email", email.toLowerCase().trim())
-                .maybeSingle();
-
-            if (error) {
-                console.error("Erro ao buscar cliente:", error);
-                toast.error("Erro ao fazer login.");
+                        const res = await fetch("/api/clientes/login", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ email, password: senha })
+            });
+            if (!res.ok) {
+                const j = await res.json().catch(() => ({}));
+                if (j?.error === "invalid_credentials") toast.error("E-mail ou senha inválidos");
+                else if (j?.error === "invitation_pending") toast.error("Cadastro não finalizado. Verifique seu e-mail/WhatsApp.");
+                else toast.error("Erro ao fazer login");
                 return;
             }
+            const payload = await res.json();
+            toast.success(`Bem-vindo, ${payload?.cliente?.nome || 'Cliente'}!`);
 
-            if (!cliente) {
-                toast.error("E-mail não encontrado!");
-                return;
-            }
-
-            if (!cliente.convite_aceito) {
-                toast.error("Cadastro não finalizado. Verifique seu e-mail/WhatsApp.");
-                return;
-            }
-
-            // Verificar senha com bcrypt
-            const senhaCorreta = await bcrypt.compare(senha, cliente.senha);
-
-            if (!senhaCorreta) {
-                toast.error("Senha incorreta!");
-                return;
-            }
-
-            // Login bem-sucedido
-            toast.success(`Bem-vindo, ${cliente.nome}! 🎉`);
-
-            // Salvar dados do cliente no sessionStorage
-            sessionStorage.setItem("cliente_logado", JSON.stringify({
-                id: cliente.id,
-                nome: cliente.nome,
-                email: cliente.email,
-            }));
-
-            // Redirecionar para área do cliente
+            // Redirecionar para Ã¡rea do cliente
             setTimeout(() => {
                 navigate("/area-cliente");
             }, 1000);
@@ -82,7 +58,7 @@ export default function LoginCliente() {
         <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
             <Card className="w-full max-w-md">
                 <CardHeader>
-                    <CardTitle className="text-center">Login Cliente - Moreira Solar ☀️</CardTitle>
+                    <CardTitle className="text-center">Login Cliente - Moreira Solar â˜€ï¸</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleLogin} className="space-y-4">

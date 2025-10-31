@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useUsuarios, Usuario } from "@/hooks/useUsuarios";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { usePermissoes, Permissao } from "@/hooks/usePermissoes";
-
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,8 +83,9 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
     gestorId: "",
     ativo: true,
   });
+  const [gerarSenha, setGerarSenha] = useState(true);
 
-  // Hook de permissões (carrega quando estiver editando e houver usuário)
+  // Hook de permissões (carrega quando estiver editando e houver usuario)
   const {
     permissoes: permissoesBD,
     isLoadingPermissoes,
@@ -95,7 +95,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
 
   const [permissoes, setPermissoes] = useState<Permissao[]>([]);
 
-  // Inicialização ao abrir/modal & mudanças de usuário/mode
+  // Inicialização ao abrir modal & mudanças de usuario/mode
   useEffect(() => {
     if (usuario && mode === "edit") {
       setFormData({
@@ -113,6 +113,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
       } else {
         setPermissoes(getPermissoesDefault(usuario.perfil));
       }
+      setGerarSenha(false);
     } else {
       // modo create
       const perfilInicial: "admin" | "gestor" | "vendedor" = "vendedor";
@@ -125,6 +126,7 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
         ativo: true,
       });
       setPermissoes(getPermissoesDefault(perfilInicial));
+      setGerarSenha(true);
     }
   }, [usuario, mode, open, userProfile, permissoesBD]);
 
@@ -164,11 +166,11 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
       toast.error("Preencha os campos obrigatórios.");
       return;
     }
-    if (mode === "create" && !formData.senha) {
+    if (mode === "create" && !gerarSenha && !formData.senha) {
       toast.error("Senha é obrigatória.");
       return;
     }
-    if (formData.senha && formData.senha.length < 6) {
+    if (!gerarSenha && formData.senha && formData.senha.length < 6) {
       toast.error("Senha deve ter no mínimo 6 caracteres.");
       return;
     }
@@ -202,20 +204,34 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
       }
 
       // Criação
-      const { user, error } = await signUp(formData.email, formData.senha, formData.nome, formData.perfil);
-      if (error) {
-        toast.error("Erro ao criar usuário: " + error.message);
+      const result = await signUp(
+        formData.email,
+        gerarSenha ? "" : formData.senha,
+        formData.nome,
+        formData.perfil
+      );
+      if (result.error) {
+        toast.error("Erro ao criar usuário.");
         return;
       }
 
-      if (user?.id) {
-        await upsertPermissoes({ userId: user.id, permissoes });
+      let tempPasswordUsed = false;
+      if (result.user?.id) {
+        await upsertPermissoes({ userId: result.user.id, permissoes });
+        if ((result as any).tempPassword) {
+          tempPasswordUsed = true;
+          try {
+            await navigator.clipboard.writeText((result as any).tempPassword);
+          } catch { }
+          toast.success("Senha temporária gerada e copiada para a área de transferência.");
+        }
       } else {
-        // Caso seu signUp não retorne id imediatamente
         toast.info("Usuário criado. As permissões serão aplicadas ao sincronizar o perfil.");
       }
 
-      toast.success("Usuário criado com sucesso! Enviamos um email de confirmação.");
+      if (!tempPasswordUsed) {
+        toast.success("Usuário criado com sucesso.");
+      }
       onOpenChange(false);
     } catch (err: any) {
       toast.error("Erro ao salvar: " + (err?.message || "tente novamente."));
@@ -264,15 +280,24 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="senha">
-                    Senha {mode === "create" ? "*" : "(deixe em branco para manter)"}
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="senha">
+                      Senha {mode === "create" && !gerarSenha ? "*" : "(opcional)"}
+                    </Label>
+                    {mode === "create" && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span>Gerar temporária</span>
+                        <Switch id="gerarSenha" checked={gerarSenha} onCheckedChange={setGerarSenha} />
+                      </div>
+                    )}
+                  </div>
                   <Input
                     id="senha"
                     type="password"
                     value={formData.senha}
                     onChange={(e) => setFormData({ ...formData, senha: e.target.value })}
-                    required={mode === "create"}
+                    required={mode === "create" && !gerarSenha}
+                    disabled={mode === "create" && gerarSenha}
                   />
                 </div>
 
@@ -333,9 +358,9 @@ export function UsuarioDialog({ open, onOpenChange, usuario, mode }: UsuarioDial
               <div className="flex justify-between items-center">
                 <p className="text-sm text-muted-foreground">
                   {isLoadingPermissoes
-                    ? "Carregando permissões…"
+                    ? "Carregando permissões..."
                     : mode === "edit" && permissoesBD && permissoesBD.length === 0
-                      ? "Sem permissões salvas — usando padrão do perfil."
+                      ? "Sem permissões salvas - usando padrão do perfil."
                       : null}
                 </p>
                 <Button type="button" variant="outline" size="sm" onClick={handleAplicarPadrao}>

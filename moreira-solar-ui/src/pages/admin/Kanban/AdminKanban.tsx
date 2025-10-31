@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido deste módulo; usamos o BFF via fetch com cookies
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,11 +33,12 @@ type Transition = { id: string; board_id: string; from_column_id: string; to_col
 // ---------------- guards (login/perfil) ----------------
 function useMe() {
     return useQuery({
-        queryKey: ["auth", "me"],
+        queryKey: ["auth", "session"],
         queryFn: async () => {
-            const { data, error } = await supabase.auth.getUser();
-            if (error) throw error;
-            return data.user;
+            const res = await fetch('/api/auth/session', { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao obter sessão');
+            const j = await res.json();
+            return j.user;
         },
     });
 }
@@ -45,11 +46,10 @@ function useMyProfile() {
     return useQuery({
         queryKey: ["auth", "profile"],
         queryFn: async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return null;
-            const { data, error } = await supabase.from("profiles").select("id, perfil, ativo, nome").eq("id", user.id).maybeSingle();
-            if (error) throw error;
-            return data;
+            const res = await fetch('/api/me', { credentials: 'include' });
+            if (res.status === 401) return null;
+            if (!res.ok) throw new Error('Falha ao obter perfil');
+            return await res.json();
         },
     });
 }
@@ -69,9 +69,9 @@ function useBoards() {
     return useQuery({
         queryKey: ["kanban", "boards"],
         queryFn: async (): Promise<Board[]> => {
-            const { data, error } = await supabase.from("kanban_board").select("*").order("name");
-            if (error) throw error;
-            return data as any;
+            const res = await fetch('/api/kanban/boards', { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar boards');
+            return (await res.json()) as any;
         },
     });
 }
@@ -80,9 +80,9 @@ function useColumns(boardId?: string) {
         enabled: !!boardId,
         queryKey: ["kanban", "columns", boardId],
         queryFn: async (): Promise<Column[]> => {
-            const { data, error } = await supabase.from("kanban_column").select("*").eq("board_id", boardId!).order("ord");
-            if (error) throw error;
-            return data as any;
+            const res = await fetch(`/api/kanban/columns?boardId=${boardId}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar colunas');
+            return (await res.json()) as any;
         },
     });
 }
@@ -91,9 +91,9 @@ function useTransitions(boardId?: string) {
         enabled: !!boardId,
         queryKey: ["kanban", "transitions", boardId],
         queryFn: async (): Promise<Transition[]> => {
-            const { data, error } = await supabase.from("kanban_transition").select("*").eq("board_id", boardId!);
-            if (error) throw error;
-            return data as any;
+            const res = await fetch(`/api/kanban/transitions?boardId=${boardId}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar transições');
+            return (await res.json()) as any;
         },
     });
 }
@@ -102,11 +102,14 @@ function useUpsertBoard() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (payload: Partial<Board>) => {
-            const body = { ...payload } as any;
-            if (!body.id) body.id = newId();
-            const { data, error } = await supabase.from("kanban_board").upsert(body).select().single();
-            if (error) throw error;
-            return data as Board;
+            const res = await fetch('/api/kanban/boards', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error('Falha ao salvar board');
+            return (await res.json()) as Board;
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["kanban", "boards"] }),
     });
@@ -115,8 +118,8 @@ function useDeleteBoard() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (id: string) => {
-            const { error } = await supabase.from("kanban_board").delete().eq("id", id);
-            if (error) throw error;
+            const res = await fetch(`/api/kanban/boards/${id}`, { method: 'DELETE', credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao excluir board');
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["kanban", "boards"] }),
     });
@@ -126,6 +129,18 @@ function useUpsertColumn(boardId: string) {
     return useMutation({
         mutationFn: async (payload: Partial<Column>) => {
             const body = { ...payload, board_id: boardId } as any;
+            // BFF: upsert column (create/update handled server-side)
+            if (!body.title || !body.key) {
+                throw new Error("Informe título e chave (key) da coluna.");
+            }
+            const resBff = await fetch('/api/kanban/columns', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!resBff.ok) throw new Error('Falha ao salvar coluna');
+            return (await resBff.json()) as Column;
 
             // edição: tem id -> UPDATE (não mexe no ord)
             if (body.id) {
@@ -136,15 +151,17 @@ function useUpsertColumn(boardId: string) {
                 if (rest.key === undefined) delete rest.key;
                 if (rest.title === undefined) delete rest.title;
 
-                const { data, error } = await supabase
-                    .from("kanban_column")
-                    .update(rest)
-                    .eq("id", id)
-                    .eq("board_id", boardId)
-                    .select()
-                    .single();
-                if (error) throw error;
-                return data as Column;
+                // (migrado para BFF)
+                // const { data, error } = await supabase
+                //     .from("kanban_column")
+                //     .update(rest)
+                //     .eq("id", id)
+                //     .eq("board_id", boardId)
+                //     .select()
+                //     .single();
+                // if (error) throw error;
+                // return data as Column;
+                throw new Error('handled by BFF above');
             }
 
             // criação: não tem id -> INSERT completo (com ord calculado)
@@ -153,27 +170,15 @@ function useUpsertColumn(boardId: string) {
             }
 
             // pega o último 'ord' e soma 1
-            const { data: last, error: eMax } = await supabase
-                .from("kanban_column")
-                .select("ord")
-                .eq("board_id", boardId)
-                .order("ord", { ascending: false })
-                .limit(1)
-                .maybeSingle();
-            if (eMax) throw eMax;
+            // migrado para BFF
 
             body.ord = (last?.ord ?? 0) + 1;
             body.id = (typeof crypto !== "undefined" && "randomUUID" in crypto)
                 ? crypto.randomUUID()
                 : Math.random().toString(36).slice(2);
 
-            const { data, error } = await supabase
-                .from("kanban_column")
-                .insert(body)
-                .select()
-                .single();
-            if (error) throw error;
-            return data as Column;
+            // migrado para BFF
+            throw new Error('handled by BFF above');
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["kanban", "columns", boardId] })
     });
@@ -183,8 +188,8 @@ function useDeleteColumn(boardId: string) {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (id: string) => {
-            const { error } = await supabase.from("kanban_column").delete().eq("id", id);
-            if (error) throw error;
+            const res = await fetch(`/api/kanban/columns/${id}`, { method: 'DELETE', credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao excluir coluna');
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["kanban", "columns", boardId] }),
     });
@@ -196,32 +201,26 @@ function useSaveOrder(boardId: string) {
             // validação
             const invalid = cols.filter(c => !c.id || !c.key);
             if (invalid.length) {
+            // BFF: salva ordem das colunas
+            const ids = cols.map(c => c.id);
+            const resOrder = await fetch('/api/kanban/columns/order', {
+                method: 'PATCH',
+                credentials: 'include',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ boardId, ids })
+            });
+            if (!resOrder.ok) throw new Error('Falha ao salvar ordem das colunas');
+            return;
                 throw new Error(
                     "Há colunas sem id/key. Edite e salve cada coluna antes de ordenar."
                 );
             }
 
             // 1ª passada: atribui ord temporário NEGATIVO único para evitar colisão
-            for (let i = 0; i < cols.length; i++) {
-                const c = cols[i];
-                const { error } = await supabase
-                    .from("kanban_column")
-                    .update({ ord: -(i + 1) })
-                    .eq("id", c.id)
-                    .eq("board_id", boardId);
-                if (error) throw error;
-            }
+            // migrado para BFF: ver chamada acima
 
             // 2ª passada: aplica ordem final 1..N
-            for (let i = 0; i < cols.length; i++) {
-                const c = cols[i];
-                const { error } = await supabase
-                    .from("kanban_column")
-                    .update({ ord: i + 1 })
-                    .eq("id", c.id)
-                    .eq("board_id", boardId);
-                if (error) throw error;
-            }
+            // migrado para BFF: ver chamada acima
         },
         onSuccess: () =>
             qc.invalidateQueries({ queryKey: ["kanban", "columns", boardId] }),
@@ -234,18 +233,11 @@ function useToggleTransition(boardId: string) {
     return useMutation({
         mutationFn: async (p: { from: string; to: string; enable: boolean }) => {
             if (p.enable) {
-                const { error } = await supabase.from("kanban_transition").insert({
-                    board_id: boardId,
-                    from_column_id: p.from,
-                    to_column_id: p.to,
-                });
-                if (error) throw error;
+                const res = await fetch('/api/kanban/transitions', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ board_id: boardId, from_column_id: p.from, to_column_id: p.to }) });
+                if (!res.ok) throw new Error('Falha ao criar transição');
             } else {
-                const { error } = await supabase
-                    .from("kanban_transition")
-                    .delete()
-                    .match({ board_id: boardId, from_column_id: p.from, to_column_id: p.to });
-                if (error) throw error;
+                const res = await fetch(`/api/kanban/transitions?boardId=${boardId}&from=${p.from}&to=${p.to}`, { method: 'DELETE', credentials: 'include' });
+                if (!res.ok) throw new Error('Falha ao remover transição');
             }
         },
         onSuccess: () => qc.invalidateQueries({ queryKey: ["kanban", "transitions", boardId] }),

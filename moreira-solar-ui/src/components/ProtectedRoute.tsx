@@ -1,24 +1,33 @@
-import { ReactNode } from "react";
-import { useAuth } from "@/contexts/AuthContext";
+import { ReactNode, useEffect, useState } from "react";
+import { apiGet } from "@/lib/api";
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  modulo: string;
+  modulo?: string;
   acao?: "visualizar" | "criar" | "editar" | "excluir";
 }
 
-export function ProtectedRoute({ children, modulo, acao = "visualizar" }: ProtectedRouteProps) {
-  const { user, loading } = useAuth();
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const [state, setState] = useState<'loading' | 'ok' | 'unauth'>('loading');
 
-  if (loading) {
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const res = await apiGet<{ authenticated: boolean }>("/api/auth/session");
+      if (!mounted) return;
+      if (res.ok && res.data.authenticated) setState('ok');
+      else setState('unauth');
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  if (state === 'loading') {
     return <div className="flex items-center justify-center h-screen">Carregando...</div>;
   }
-
-  if (!user) {
+  if (state === 'unauth') {
+    window.location.href = '/login';
     return null;
   }
-
-  // Por enquanto, permitir acesso a todos os módulos para usuários autenticados
-  // TODO: Implementar sistema de permissões baseado no Supabase
   return <>{children}</>;
 }
+

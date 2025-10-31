@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+// Perfil agora consome BFF (/api/me)
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,49 +29,33 @@ export default function Perfil() {
 
   async function fetchProfile() {
     setIsLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      toast.error("Usuário não autenticado");
-      setIsLoading(false);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
-
-    if (error) {
-      toast.error("Erro ao carregar perfil");
-      console.error(error);
-    } else {
+    try {
+      const res = await fetch('/api/me', { credentials: 'include' });
+      if (res.status === 401) { toast.error('Sessão expirada'); setIsLoading(false); return; }
+      if (!res.ok) throw new Error('Falha ao carregar perfil');
+      const data = await res.json();
       setProfile(data);
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao carregar perfil');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }
 
   async function handleSave() {
     if (!profile) return;
     setSaving(true);
-
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        nome: profile.nome,
-        email: profile.email,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", profile.id);
-
-    setSaving(false);
-
-    if (error) {
-      toast.error("Erro ao salvar alterações");
-      console.error(error);
-    } else {
-      toast.success("Perfil atualizado com sucesso!");
+    try {
+      const res = await fetch('/api/me', { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: profile.nome, email: profile.email, ultimoAcesso: new Date().toISOString() }) });
+      if (!res.ok) throw new Error('Falha ao salvar');
+      toast.success('Perfil atualizado com sucesso!');
       fetchProfile();
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao salvar alterações');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -124,23 +108,24 @@ export default function Perfil() {
       const fileName = `${profile.id}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, blob, { upsert: true });
+      const buffer = await blob.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const up = await fetch('/api/upload', {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bucket: 'avatars', path: filePath, filename: fileName, contentType: 'image/jpeg', dataBase64: b64, upsert: true })
+      });
+      if (!up.ok) throw new Error('Falha no upload do avatar');
+      const out = await up.json();
 
-      if (uploadError) throw uploadError;
+      const upd = await fetch('/api/me', {
+        method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ avatar: out.url || out.path })
+      });
+      if (!upd.ok) throw new Error('Falha ao atualizar perfil');
 
-      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ avatar: data.publicUrl })
-        .eq("id", profile.id);
-
-      if (updateError) throw updateError;
-
-      setProfile({ ...profile, avatar: data.publicUrl });
-      toast.success("Foto de perfil atualizada!");
+      const finalUrl = (out.url || out.path) + `?t=${Date.now()}`;
+      setProfile({ ...profile, avatar: finalUrl });
+      toast.success('Foto de perfil atualizada!');
       setCropModalOpen(false);
     } catch (error) {
       console.error(error);

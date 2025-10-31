@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido do front: usar BFF endpoints
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,20 +17,7 @@ export default function MeusProjetos() {
     });
 
     // 🔹 Efeito para carregar o cliente logado e buscar os projetos
-    useEffect(() => {
-        const clienteLogado = sessionStorage.getItem("cliente_logado");
-
-        if (!clienteLogado) {
-            toast.error("Você precisa fazer login!");
-            navigate("/login-cliente");
-            return;
-        }
-
-        const clienteData = JSON.parse(clienteLogado);
-
-        setCliente(clienteData);
-        carregarProjetos(clienteData.id);
-    }, [navigate]);
+    useEffect(() => { (async () => { try { const res = await fetch('/api/projetos', { credentials: 'include' }); if (res.status === 401) { toast.error('Fa�a login!'); navigate('/login-cliente'); return; } if (!res.ok) throw new Error('projetos_query_failed'); const data = await res.json(); setProjetos(data || []); } catch (e) { console.error(e); toast.error('Erro ao carregar projetos'); } finally { setLoading(false); } })(); }, [navigate]);
 
     // 🔹 Alternância de tema (dark/light)
     useEffect(() => {
@@ -219,3 +206,4 @@ export default function MeusProjetos() {
         </div>
     );
 }
+

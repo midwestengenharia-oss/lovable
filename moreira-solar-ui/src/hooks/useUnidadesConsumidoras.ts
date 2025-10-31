@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints
 import { toast } from 'sonner';
 
 // Nota: A tabela do banco tem estrutura simplificada
@@ -35,15 +35,10 @@ export function useUnidadesConsumidoras() {
   const { data: unidades = [], isLoading } = useQuery({
     queryKey: ['unidades_consumidoras'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('unidades_consumidoras')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Mapear campos snake_case para camelCase e adicionar defaults
-      return (data || []).map(uc => ({
+      const res = await fetch('/api/unidades-consumidoras', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar unidades');
+      const data = await res.json();
+      return (data || []).map((uc: any) => ({
         id: uc.id,
         numeroUC: uc.numero_instalacao,
         apelido: uc.apelido || null,
@@ -69,30 +64,9 @@ export function useUnidadesConsumidoras() {
 
   const addUnidade = useMutation({
     mutationFn: async (unidade: Omit<UnidadeConsumidora, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const { data, error } = await supabase
-        .from('unidades_consumidoras')
-        .insert([{
-          numero_instalacao: unidade.numeroUC,
-          titular_id: unidade.titularId,
-          cliente_id: unidade.clienteId,
-          projeto_id: unidade.projetoId,
-          cidade: unidade.cidade,
-          uf: unidade.uf,
-          distribuidora: unidade.distribuidora,
-          grupo: unidade.grupo,
-          classe: unidade.classe,
-          modalidade: unidade.modalidade,
-          ativo: unidade.ativo,
-          user_id: user.id
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/unidades-consumidoras', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(unidade) });
+      if (!res.ok) throw new Error('Falha ao cadastrar unidade');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades_consumidoras'] });
@@ -117,16 +91,9 @@ export function useUnidadesConsumidoras() {
       if (updates.classe !== undefined) updateData.classe = updates.classe;
       if (updates.modalidade !== undefined) updateData.modalidade = updates.modalidade;
       if (updates.ativo !== undefined) updateData.ativo = updates.ativo;
-
-      const { data, error } = await supabase
-        .from('unidades_consumidoras')
-        .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/unidades-consumidoras/${id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(updateData) });
+      if (!res.ok) throw new Error('Falha ao atualizar unidade');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades_consumidoras'] });
@@ -139,12 +106,8 @@ export function useUnidadesConsumidoras() {
 
   const deleteUnidade = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('unidades_consumidoras')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/unidades-consumidoras/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao remover unidade');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unidades_consumidoras'] });

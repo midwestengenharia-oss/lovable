@@ -1,186 +1,81 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
-import logoMoreira from "@/assets/logo-moreira.png";
-import { supabase } from "@/lib/supabase";
+import logo from "@/assets/logo-moreira.png";
 
 export default function Login() {
-  const { user, signIn } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [lembrar, setLembrar] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  // ✅ Melhoria: Restaura o sessionStorage caso o usuário já tenha sessão ativa (evita bug ao atualizar)
   useEffect(() => {
-    const restaurarSessao = async () => {
-      const { data } = await supabase.auth.getSession();
-      const sessao = data?.session;
-      if (sessao?.user && !sessionStorage.getItem("usuario_logado")) {
-        const user = sessao.user;
-        const meta = user.user_metadata || {};
-        const usuario_logado = {
-          id: user.id,
-          nome: meta.nome || "Usuário",
-          tipo: meta.perfil || "vendedor",
-          email: user.email,
-        };
-        sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
-      }
-    };
-    restaurarSessao();
-  }, []);
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/session', { credentials: 'include' });
+        if (!mounted) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.authenticated) navigate('/', { replace: true });
+        }
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, [navigate]);
 
-  // ✅ Se já estiver logado, redireciona automaticamente
-  useEffect(() => {
-    if (user) {
-      navigate("/", { replace: true });
-    }
-  }, [user, navigate]);
-
-  // ==== Função de Login ====
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!email || !senha) {
-      toast.error("Preencha email e senha");
-      return;
-    }
-
-    setIsLoading(true);
-    const { error } = await signIn(email, senha);
-
-    if (!error) {
-      try {
-        // ✅ Pega a sessão atual do Supabase
-        const { data } = await supabase.auth.getSession();
-
-        if (data?.session?.user) {
-          const user = data.session.user;
-
-          // 🔒 VERIFICAÇÃO DE USUÁRIO ATIVO
-          const { data: usuarioDB, error: erroConsulta } = await supabase
-            .from("profiles") // 👈 Tabela correta
-            .select("ativo, nome, perfil")
-            .eq("id", user.id)
-            .single();
-
-          if (erroConsulta) {
-            console.error("❌ Erro ao buscar usuário:", erroConsulta);
-            toast.error("Erro ao verificar dados do usuário");
-            await supabase.auth.signOut();
-            setIsLoading(false);
-            return;
-          }
-
-          // ⛔ Verifica se o usuário está INATIVO
-          if (usuarioDB?.ativo === false) {
-            toast.error("Sua conta está inativa. Entre em contato com o administrador.");
-            await supabase.auth.signOut();
-            setIsLoading(false);
-            return;
-          }
-
-          // ✅ Usuário ativo - pode prosseguir
-          const meta = user.user_metadata || {};
-          const usuario_logado = {
-            id: user.id,
-            nome: usuarioDB.nome || meta.nome || "Usuário",
-            tipo: usuarioDB.perfil || meta.perfil || "vendedor",
-            email: user.email,
-          };
-
-          // ✅ Salva no sessionStorage
-          sessionStorage.setItem("usuario_logado", JSON.stringify(usuario_logado));
-
-          toast.success("Login realizado com sucesso!");
-          setIsLoading(false);
-          navigate("/");
-        } else {
-          console.warn("⚠️ Nenhum usuário retornado da sessão Supabase.");
-          setIsLoading(false);
-        }
-      } catch (err) {
-        console.error("❌ Erro ao salvar usuário no sessionStorage:", err);
-        toast.error("Erro ao processar login");
-        setIsLoading(false);
+    if (!email.trim() || !password.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (res.ok) {
+        navigate('/', { replace: true });
+      } else {
+        let msg = 'Falha no login';
+        try { const j = await res.json(); if (j?.error) msg = String(j.error); } catch {}
+        alert(msg);
       }
-    } else {
-      toast.error("Email ou senha incorretos");
-      setIsLoading(false);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-primary/10 p-4">
+      <Card className="w-full max-w-md shadow-xl border border-border/40 backdrop-blur-sm">
         <CardHeader className="space-y-4 text-center">
-          <div className="flex justify-center">
-            <img src={logoMoreira} alt="Moreira Solar" className="h-16 w-auto" />
-          </div>
+          <img src={logo} alt="Moreira Solar" className="mx-auto h-16 w-auto mb-2" />
           <div>
-            <CardTitle className="text-2xl">Sistema de Gestão Solar</CardTitle>
-            <CardDescription>Entre com suas credenciais para acessar</CardDescription>
+            <CardTitle className="text-2xl font-semibold">Acesso Interno</CardTitle>
+            <CardDescription>Entre com e-mail e senha</CardDescription>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="seu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <Label htmlFor="email">E-mail</Label>
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="senha">Senha</Label>
-              <Input
-                id="senha"
-                type="password"
-                placeholder="••••••••"
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                required
-              />
+              <Label htmlFor="password">Senha</Label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="lembrar"
-                checked={lembrar}
-                onCheckedChange={(checked) => setLembrar(checked as boolean)}
-              />
-              <label
-                htmlFor="lembrar"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              >
-                Lembrar-me
-              </label>
-            </div>
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Entrando..." : "Entrar"}
-            </Button>
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Entrando�' : 'Entrar'}</Button>
           </form>
-
-          <div className="mt-6 p-4 bg-muted/50 rounded-lg">
-            <p className="text-xs text-muted-foreground">
-              <strong>Primeira vez?</strong> Crie sua conta na página de cadastro ou faça login com suas credenciais do Supabase.
-            </p>
-          </div>
         </CardContent>
+        <CardFooter className="flex flex-col space-y-2">
+          <p className="text-xs text-muted-foreground text-center">Portal do cliente: <a className="underline" href="/login-cliente">entrar</a></p>
+        </CardFooter>
       </Card>
     </div>
   );

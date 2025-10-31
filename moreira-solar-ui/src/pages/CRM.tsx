@@ -16,7 +16,7 @@ import { KanbanCardData } from "@/components/kanban/KanbanCard";
 import { SidePanel } from "@/components/panels/SidePanel";
 import { Timeline, TimelineEvent } from "@/components/shared/Timeline";
 import { DropResult } from "@hello-pangea/dnd";
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints are used via hooks and fetch; no Supabase directly
 
 export default function CRM() {
   const { leads, isLoading, addLead, updateLead, deleteLead } = useLeads();
@@ -91,6 +91,47 @@ export default function CRM() {
     }
   };
 
+  // Conversão de Lead em Cliente via BFF (sem Supabase no front)
+  const handleConvertLeadBff = async (lead: Lead) => {
+    try {
+      const resList = await fetch('/api/clientes', { credentials: 'include' });
+      if (!resList.ok) throw new Error('Falha ao listar clientes');
+      const lista = (await resList.json()) as any[];
+      const dup = (lista || []).find((c: any) => (
+        (c.telefone && lead.telefone && String(c.telefone) === String(lead.telefone)) ||
+        (c.email && lead.email && String(c.email).toLowerCase() === String(lead.email).toLowerCase())
+      ));
+      if (dup) {
+        toast.warning(`Cliente "${lead.cliente}" já existe na base.`);
+        updateLead({ id: lead.id, status: 'Convertido' });
+        return;
+      }
+
+      const tipoPessoa = lead.cpf_cnpj && lead.cpf_cnpj.replace(/\D/g, '').length > 11 ? 'PJ' : 'PF';
+      const resCreate = await fetch('/api/clientes', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          nome: lead.cliente,
+          telefone: lead.telefone,
+          email: lead.email,
+          cidade: lead.cidade,
+          uf: lead.uf,
+          origem: lead.fonte || 'CRM',
+          tipo_pessoa: tipoPessoa,
+        }),
+      });
+      if (!resCreate.ok) throw new Error('Falha ao criar cliente');
+
+      updateLead({ id: lead.id, status: 'Convertido' });
+      toast.success('Lead convertido em cliente com sucesso!');
+    } catch (error) {
+      console.error(error);
+      toast.error('Erro ao converter lead em cliente.');
+    }
+  };
+
   const getStatusBadge = (status: Lead["status"]) => {
     const variants: Record<Lead["status"], string> = {
       Novo: "bg-primary text-primary-foreground",
@@ -146,66 +187,7 @@ export default function CRM() {
     }
   };
 
-  const handleConvertLead = async (lead: Lead) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("Usuário não autenticado");
-        return;
-      }
-
-      // ✅ Verifica se já existe cliente com o mesmo telefone ou email
-      const { data: existing, error: existingError } = await supabase
-        .from("clientes")
-        .select("id, nome, telefone, email")
-        .or(`telefone.eq.${lead.telefone},email.eq.${lead.email}`)
-        .eq("user_id", user.id)
-        .limit(1);
-
-      if (existingError) throw existingError;
-
-      if (existing && existing.length > 0) {
-        toast.warning(`Cliente "${lead.cliente}" já existe na base.`);
-
-        // Atualiza o status sem disparar o toast padrão
-        await supabase
-          .from("leads")
-          .update({ status: "Convertido" })
-          .eq("id", lead.id);
-
-        return;
-      }
-
-      // ✅ Detecta se é Pessoa Física ou Jurídica automaticamente
-      const tipoPessoa =
-        lead.cpf_cnpj && lead.cpf_cnpj.replace(/\D/g, "").length > 11
-          ? "PJ"
-          : "PF";
-
-      // ✅ Insere novo cliente se não existir
-      const { error: insertError } = await supabase.from("clientes").insert([
-        {
-          nome: lead.cliente,
-          telefone: lead.telefone,
-          email: lead.email,
-          cidade: lead.cidade,
-          estado: lead.uf,
-          origem: lead.fonte || "CRM",
-          tipo_pessoa: tipoPessoa,
-          user_id: user.id,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-
-      if (insertError) throw insertError;
-
-      await updateLead({ id: lead.id, status: "Convertido" });
-      toast.success(`Lead convertido em cliente com sucesso!`);
-    } catch (error: any) {
-      console.error(error);
-      toast.error("Erro ao converter lead em cliente.");
-    }
-  };
+  
 
 
 
@@ -378,7 +360,7 @@ export default function CRM() {
                       <Button variant="ghost" size="icon" onClick={() => handleOpenDialog(lead)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleConvertLead(lead)}>
+                      <Button variant="ghost" size="icon" onClick={() => handleConvertLeadBff(lead)}>
                         <UserPlus className="h-4 w-4 text-green-600" />
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(lead.id)}>

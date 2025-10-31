@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido do front: usar BFF endpoints
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Save, Lock, Sun, Moon } from "lucide-react";
 import { toast } from "sonner";
-import bcrypt from "bcryptjs";
 
 export default function MeuPerfil() {
     const navigate = useNavigate();
@@ -26,42 +25,27 @@ export default function MeuPerfil() {
     const [confirmarNovaSenha, setConfirmarNovaSenha] = useState("");
 
     useEffect(() => {
-        const clienteLogado = sessionStorage.getItem("cliente_logado");
-
-        if (!clienteLogado) {
-            toast.error("VocÃª precisa fazer login!");
-            navigate("/login-cliente");
-            return;
-        }
-
-        const clienteData = JSON.parse(clienteLogado);
-        setCliente(clienteData);
-        carregarDados(clienteData.id);
-    }, [navigate]);
+  (async () => {
+    try {
+      const res = await fetch('/api/clientes/me', { credentials: 'include' });
+      if (res.status === 401) { toast.error('Faça login!'); navigate('/login-cliente'); return; }
+      if (!res.ok) throw new Error('cliente_me_failed');
+      const me = await res.json();
+      setCliente(me);
+      setDadosCliente(me);
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao carregar seus dados');
+    } finally { setLoading(false); }
+  })();
+}, [navigate]);
 
     useEffect(() => {
         document.documentElement.classList.toggle("dark", darkMode);
         localStorage.setItem("theme", darkMode ? "dark" : "light");
     }, [darkMode]);
 
-    const carregarDados = async (clienteId: string) => {
-        try {
-            const { data, error } = await supabase
-                .from("clientes")
-                .select("*")
-                .eq("id", clienteId)
-                .single();
-
-            if (error) throw error;
-
-            setDadosCliente(data);
-        } catch (error: any) {
-            console.error("Erro ao carregar dados:", error);
-            toast.error("Erro ao carregar seus dados");
-        } finally {
-            setLoading(false);
-        }
-    };
+    
 
     const handleSalvar = async () => {
         try {
@@ -86,13 +70,7 @@ export default function MeuPerfil() {
             toast.success("Dados atualizados com sucesso!");
 
             // Atualizar sessionStorage
-            sessionStorage.setItem(
-                "cliente_logado",
-                JSON.stringify({
-                    ...cliente,
-                    email: dadosCliente.email,
-                })
-            );
+            
         } catch (error: any) {
             console.error("Erro ao salvar:", error);
             toast.error("Erro ao salvar dados: " + error.message);
@@ -102,60 +80,24 @@ export default function MeuPerfil() {
     };
 
     const handleAlterarSenha = async () => {
-        if (!senhaAtual || !novaSenha || !confirmarNovaSenha) {
-            toast.error("Preencha todos os campos de senha!");
-            return;
-        }
-
-        if (novaSenha.length < 6) {
-            toast.error("A nova senha deve ter pelo menos 6 caracteres!");
-            return;
-        }
-
-        if (novaSenha !== confirmarNovaSenha) {
-            toast.error("As senhas nÃ£o coincidem!");
-            return;
-        }
-
-        try {
-            setSaving(true);
-
-            const { data: clienteData, error: fetchError } = await supabase
-                .from("clientes")
-                .select("senha")
-                .eq("id", cliente.id)
-                .single();
-
-            if (fetchError) throw fetchError;
-
-            const senhaCorreta = await bcrypt.compare(senhaAtual, clienteData.senha);
-
-            if (!senhaCorreta) {
-                toast.error("Senha atual incorreta!");
-                return;
-            }
-
-            const novaSenhaHash = await bcrypt.hash(novaSenha, 10);
-
-            const { error } = await supabase
-                .from("clientes")
-                .update({ senha: novaSenhaHash })
-                .eq("id", cliente.id);
-
-            if (error) throw error;
-
-            toast.success("Senha alterada com sucesso!");
-            setSenhaAtual("");
-            setNovaSenha("");
-            setConfirmarNovaSenha("");
-            setMostrarAlterarSenha(false);
-        } catch (error: any) {
-            console.error("Erro ao alterar senha:", error);
-            toast.error("Erro ao alterar senha: " + error.message);
-        } finally {
-            setSaving(false);
-        }
-    };
+  if (!senhaAtual || !novaSenha || !confirmarNovaSenha) { toast.error("Preencha todos os campos de senha!"); return; }
+  if (novaSenha.length < 6) { toast.error("A nova senha deve ter pelo menos 6 caracteres!"); return; }
+  if (novaSenha !== confirmarNovaSenha) { toast.error("As senhas não coincidem!"); return; }
+  try {
+    setSaving(true);
+    const res = await fetch('/api/clientes/password', {
+      method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ current_password: senhaAtual, new_password: novaSenha })
+    });
+    if (res.status === 401) { toast.error('Senha atual incorreta!'); return; }
+    if (!res.ok) throw new Error('password_change_failed');
+    toast.success('Senha alterada com sucesso!');
+    setSenhaAtual(''); setNovaSenha(''); setConfirmarNovaSenha(''); setMostrarAlterarSenha(false);
+  } catch (e) {
+    console.error('Erro ao alterar senha:', e);
+    toast.error('Erro ao alterar senha');
+  } finally { setSaving(false); }
+};
 
     if (loading) {
         return (
@@ -406,3 +348,8 @@ export default function MeuPerfil() {
         </div>
     );
 }
+
+
+
+
+

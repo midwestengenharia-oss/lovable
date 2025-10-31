@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+// Uploads migrados para o BFF
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -66,16 +66,9 @@ export default function Suporte() {
 
     const carregarChamados = async (clienteId: string) => {
         try {
-            const { data, error } = await supabase
-                .from("chamados")
-                .select("*")
-                .eq("cliente_id", clienteId)
-                .order("created_at", { ascending: false });
-
-            if (error && (error as any).code !== "PGRST116") {
-                console.error("Erro ao carregar chamados:", error);
-            }
-
+            const res = await fetch(`/api/cliente/chamados?clienteId=${clienteId}`, { credentials: 'include' });
+            if (!res.ok) throw new Error('Falha ao carregar chamados');
+            const data = await res.json();
             setChamados(data || []);
         } catch (error: any) {
             console.error("Erro ao carregar chamados:", error);
@@ -141,17 +134,19 @@ export default function Suporte() {
                     }`;
                 const filePath = `${cliente.id}/${fileName}`;
 
-                const { error: uploadError } = await supabase.storage
-                    .from("chamados-fotos")
-                    .upload(filePath, foto);
-
-                if (uploadError) throw uploadError;
-
-                const {
-                    data: { publicUrl },
-                } = supabase.storage.from("chamados-fotos").getPublicUrl(filePath);
-
-                fotosUrls.push(publicUrl);
+                // Envia via BFF (base64)
+                const b64 = await new Promise<string>((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(String(r.result).split(',')[1] || '');
+                    r.onerror = reject; r.readAsDataURL(foto);
+                });
+                const resp = await fetch('/api/upload', {
+                    method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ bucket: 'chamados-fotos', path: filePath, filename: foto.name, contentType: foto.type, dataBase64: b64 })
+                });
+                if (!resp.ok) throw new Error('Falha ao enviar foto');
+                const out = await resp.json();
+                fotosUrls.push(out.url || out.path);
             }
             return fotosUrls;
         } catch (error: any) {
@@ -173,34 +168,11 @@ export default function Suporte() {
             const numeroChamado = gerarNumero();
             const fotosUrls = await uploadFotos(numeroChamado);
 
-            const { data: clienteData } = await supabase
-                .from("clientes")
-                .select("user_id, nome")
-                .eq("id", cliente.id)
-                .single();
-
-            const { error } = await supabase.from("chamados").insert({
-                numero: numeroChamado,
-                cliente: clienteData?.nome || cliente.nome,
-                cliente_id: cliente.id,
-                tipo,
-                prioridade,
-                status: "Chamado",
-                substatus: "Triagem",
-                descricao,
-                data: new Date().toISOString(),
-                user_id: clienteData?.user_id,
-                fotos: fotosUrls,
-                historico: [
-                    {
-                        data: new Date().toISOString(),
-                        acao: "Chamado criado pelo cliente",
-                        usuario: cliente.nome,
-                    },
-                ],
+            const resp = await fetch('/api/cliente/chamados', {
+                method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ cliente_id: cliente.id, tipo, prioridade, descricao, fotos: fotosUrls })
             });
-
-            if (error) throw error;
+            if (!resp.ok) throw new Error('Falha ao criar chamado');
 
             toast.success("Chamado enviado com sucesso!");
             setDescricao("");

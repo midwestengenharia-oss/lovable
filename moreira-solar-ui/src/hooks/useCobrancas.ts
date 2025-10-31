@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from 'sonner';
 import { Cobranca } from '@/types/supabase';
+import { apiGet } from '@/lib/api';
 
 export function useCobrancas() {
   const queryClient = useQueryClient();
@@ -9,29 +9,15 @@ export function useCobrancas() {
   const { data: cobrancas = [], isLoading } = useQuery({
     queryKey: ['cobrancas'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cobrancas')
-        .select('*')
-        .order('vencimento', { ascending: true });
-      
-      if (error) throw error;
-      return data as Cobranca[];
+      const res = await apiGet<Cobranca[]>(`/api/cobrancas`);
+      if (!res.ok) throw new Error('Falha ao carregar cobranças');
+      return res.data;
     }
   });
 
   const addCobranca = useMutation({
-    mutationFn: async (cobranca: Omit<Cobranca, 'id' | 'user_id'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const { data, error } = await supabase
-        .from('cobrancas')
-        .insert([{ ...cobranca, user_id: user.id }])
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
+    mutationFn: async (_cobranca: Omit<Cobranca, 'id' | 'user_id'>) => {
+      throw new Error('Criação de cobrança não suportada via BFF ainda');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cobrancas'] });
@@ -44,15 +30,14 @@ export function useCobrancas() {
 
   const updateCobranca = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Cobranca> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('cobrancas')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/cobrancas/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar cobrança');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cobrancas'] });
@@ -64,13 +49,8 @@ export function useCobrancas() {
   });
 
   const deleteCobranca = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('cobrancas')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
+    mutationFn: async (_id: string) => {
+      throw new Error('Remoção de cobrança não suportada via BFF ainda');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cobrancas'] });
@@ -92,3 +72,4 @@ export function useCobrancas() {
     isDeleting: deleteCobranca.isPending
   };
 }
+

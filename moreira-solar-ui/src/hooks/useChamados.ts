@@ -1,5 +1,4 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from 'sonner';
 
 export interface Chamado {
@@ -7,9 +6,9 @@ export interface Chamado {
   numero: string;
   cliente: string;
   projeto_id?: string;
-  tipo: 'Manutenção' | 'Garantia' | 'Suporte' | 'Limpeza';
-  prioridade: 'Baixa' | 'Média' | 'Alta';
-  status: 'Onboarding' | 'Ativo' | 'Manutenção' | 'Chamado' | 'Finalizado';
+  tipo: 'Manutenção' | 'Garantia' | 'Suporte' | 'Limpeza' | string;
+  prioridade: 'Baixa' | 'Média' | 'Alta' | string;
+  status: 'Onboarding' | 'Ativo' | 'Manutenção' | 'Chamado' | 'Finalizado' | string;
   descricao: string;
   data: string;
   tecnico?: string;
@@ -23,19 +22,9 @@ export interface Chamado {
   updated_at?: string;
 }
 
-function genNumeroChamado(prefix = "PV") {
-  const d = new Date();
-  const yyyymm = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `${prefix}-${yyyymm}-${rand}`;
-}
-
-// Normaliza qualquer coisa em objeto simples
 function ensureObject<T extends object = Record<string, any>>(v: any): T {
   if (Array.isArray(v)) return (v[0] ?? {}) as T;
-  if (typeof v === "string") {
-    try { return JSON.parse(v) as T; } catch { return {} as T; }
-  }
+  if (typeof v === 'string') { try { return JSON.parse(v) as T; } catch { return {} as T; } }
   return (v ?? {}) as T;
 }
 
@@ -45,112 +34,56 @@ export function useChamados() {
   const { data: chamados = [], isLoading } = useQuery({
     queryKey: ['chamados'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('chamados')
-        .select('*')
-        .order('data', { ascending: false });
-      if (error) throw error;
-      return data as Chamado[];
+      const res = await fetch('/api/chamados', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar chamados');
+      return (await res.json()) as Chamado[];
     }
   });
 
-  // ---- CREATE
   const addChamadoMutation = useMutation({
     mutationFn: async (chamado: Omit<Chamado, 'id' | 'user_id' | 'numero'> & { numero?: string }) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // garante numero único (se banco não gerar)
-      let numero = chamado.numero || genNumeroChamado();
-
-      // tenta inserir; se colidir, regenera uma única vez
-      let { data, error } = await supabase
-        .from('chamados')
-        .insert([{ ...chamado, numero, user_id: user.id }])
-        .select()
-        .single();
-
-      if (error && String(error.message).includes('chamados_numero_key')) {
-        numero = genNumeroChamado();
-        const retry = await supabase
-          .from('chamados')
-          .insert([{ ...chamado, numero, user_id: user.id }])
-          .select()
-          .single();
-        data = retry.data as any;
-        error = retry.error as any;
-      }
-
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/chamados', {
+        method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(chamado)
+      });
+      if (!res.ok) throw new Error('Falha ao criar chamado');
+      return await res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chamados'] });
-      toast.success('Chamado criado com sucesso');
-    },
-    onError: (error: any) => {
-      toast.error('Erro ao criar chamado: ' + error.message);
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['chamados'] }); toast.success('Chamado criado com sucesso'); },
+    onError: (e: any) => toast.error('Erro ao criar chamado: ' + e.message)
   });
 
-  // ---- UPDATE (mutation “crua” que recebe um único objeto)
   const updateChamadoMutation = useMutation({
     mutationFn: async (payload: Partial<Chamado> & { id: string }) => {
-      const { id, ...rest } = payload;
-      const safe = ensureObject(rest);
-
-      const { data, error } = await supabase
-        .from('chamados')
-        .update(safe)         // 👈 sem colchetes
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const { id, ...rest } = payload; const safe = ensureObject(rest);
+      const res = await fetch(`/api/chamados/${id}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(safe)
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar chamado');
+      return await res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chamados'] });
-      toast.success('Chamado atualizado com sucesso');
-    },
-    onError: (error: any) => {
-      toast.error('Erro ao atualizar chamado: ' + error.message);
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['chamados'] }); toast.success('Chamado atualizado com sucesso'); },
+    onError: (e: any) => toast.error('Erro ao atualizar chamado: ' + e.message)
   });
 
-  // ---- DELETE
   const deleteChamadoMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('chamados').delete().eq('id', id);
-      if (error) throw error;
+      const res = await fetch(`/api/chamados/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao remover chamado');
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chamados'] });
-      toast.success('Chamado removido com sucesso');
-    },
-    onError: (error: any) => {
-      toast.error('Erro ao remover chamado: ' + error.message);
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['chamados'] }); toast.success('Chamado removido com sucesso'); },
+    onError: (e: any) => toast.error('Erro ao remover chamado: ' + e.message)
   });
-
-  // ---- Wrappers amigáveis (mantém sua forma de uso atual)
-  const addChamado = (dados: Omit<Chamado, 'id' | 'user_id' | 'numero'> & { numero?: string }) =>
-    addChamadoMutation.mutate(dados);
-
-  const updateChamado = (id: string, patch: Partial<Chamado> | string | any[]) =>
-    updateChamadoMutation.mutate({ id, ...ensureObject(patch) });
-
-  const deleteChamado = (id: string) =>
-    deleteChamadoMutation.mutate(id);
 
   return {
     chamados,
     isLoading,
-    addChamado,
-    updateChamado,
-    deleteChamado,
+    addChamado: addChamadoMutation.mutate,
+    updateChamado: (id: string, patch: Partial<Chamado> | string | any[]) => updateChamadoMutation.mutate({ id, ...ensureObject(patch) }),
+    deleteChamado: deleteChamadoMutation.mutate,
     isAdding: addChamadoMutation.isPending,
     isUpdating: updateChamadoMutation.isPending,
     isDeleting: deleteChamadoMutation.isPending,
   };
 }
+

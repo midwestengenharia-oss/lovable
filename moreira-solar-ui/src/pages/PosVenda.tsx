@@ -1,7 +1,7 @@
 // src/pages/PosVenda.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+// Supabase removido do front; usar BFF
 
 import { KanbanBoard, KanbanColumnData } from "@/components/kanban/KanbanBoard";
 import { KanbanCardData } from "@/components/kanban/KanbanCard";
@@ -85,43 +85,34 @@ function useLoadedBoard(boardSlugOrId: string) {
   return useQuery({
     queryKey: ["kanban", "loaded", boardSlugOrId],
     queryFn: async (): Promise<LoadedBoard> => {
-      // 👇 troca single() por maybeSingle()
-      const { data: board, error: e1 } = await supabase
-        .from("kanban_board")
-        .select("*")
-        .eq("slug", boardSlugOrId)
-        .maybeSingle();
+      const boardsRes = await fetch('/api/kanban/boards', { credentials: 'include' });
+      if (!boardsRes.ok) throw new Error('boards_query_failed');
+      const boards: DBBoard[] = await boardsRes.json();
+      let board = boards.find((b: any) => b.slug === boardSlugOrId || b.id === boardSlugOrId) as DBBoard | undefined;
+      if (!board) {
+        board = boards.find((b: any) => String(b.name || '').toLowerCase() === String(boardSlugOrId).toLowerCase());
+      }
+      if (!board) return null;
 
-      if (e1) throw e1;
-      if (!board) return null; // 👈 sem erro: deixa a tela usar o fallback
+      const colsRes = await fetch(`/api/kanban/columns?boardId=${encodeURIComponent(board.id)}`, { credentials: 'include' });
+      if (!colsRes.ok) throw new Error('columns_query_failed');
+      const allCols: DBColumn[] = await colsRes.json();
+      const cols = (allCols || []).filter((c: any) => c.active !== false).sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
 
-      const { data: cols, error: e2 } = await supabase
-        .from("kanban_column")
-        .select("*")
-        .eq("board_id", board.id)
-        .eq("active", true)
-        .order("ord");
-      if (e2) throw e2;
-
-      const { data: trans, error: e3 } = await supabase
-        .from("kanban_transition")
-        .select("*")
-        .eq("board_id", board.id);
-      if (e3) throw e3;
+      const transRes = await fetch(`/api/kanban/transitions?boardId=${encodeURIComponent(board.id)}`, { credentials: 'include' });
+      if (!transRes.ok) throw new Error('transitions_query_failed');
+      const trans: DBTransition[] = await transRes.json();
 
       const transitions: Record<string, string[]> = {};
-      (trans || []).forEach((t: DBTransition) => {
+      (trans || []).forEach((t) => {
         transitions[t.from_column_id] ||= [];
         transitions[t.from_column_id].push(t.to_column_id);
       });
 
-      return { board, columns: (cols || []) as DBColumn[], transitions };
+      return { board, columns: cols as DBColumn[], transitions };
     },
   });
-}
-
-
-/* ============================= Helpers: board logic ============================= */
+}/* ============================= Helpers: board logic ============================= */
 
 function matchesColumn(ch: Chamado, col: DBColumn) {
   const patch = col.update_patch || {};
@@ -586,3 +577,5 @@ export default function PosVenda() {
     </div>
   );
 }
+
+

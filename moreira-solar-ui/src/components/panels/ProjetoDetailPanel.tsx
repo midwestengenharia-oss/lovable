@@ -1,7 +1,7 @@
 // src/components/panels/ProjetoDetailPanel.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+// Uploads e remoções agora via BFF
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -119,26 +119,39 @@ function collectStorageKeysFromValue(v: any, bucket = BUCKET): string[] {
   return Array.from(new Set(keys.filter(Boolean)));
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 async function handleFileUpload(field: StageField, file: File, projetoId: string) {
   const path = `${projetoId}/${field.key}/${Date.now()}-${file.name}`;
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-  if (error) throw error;
-
-  const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return {
-    path,
-    url: pub?.publicUrl,
-    name: file.name,
-    size: file.size,
-    type: file.type,
-  };
+  const dataBase64 = await fileToBase64(file);
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ bucket: BUCKET, path, filename: file.name, contentType: file.type, dataBase64 })
+  });
+  if (!res.ok) throw new Error('Falha ao enviar arquivo');
+  const out = await res.json();
+  return { path: out.path, url: out.url, name: file.name, size: file.size, type: file.type };
 }
 
 async function handleFileRemove(current: any) {
   const keys = collectStorageKeysFromValue(current, BUCKET);
   if (keys.length === 0) return; // evita "argument 1: key must not be null"
-  const { error } = await supabase.storage.from(BUCKET).remove(keys);
-  if (error) throw error;
+  const res = await fetch('/api/upload/remove', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ bucket: BUCKET, paths: keys })
+  });
+  if (!res.ok) throw new Error('Falha ao remover arquivo');
 }
 
 /* pretty print para valores do histórico */
@@ -158,14 +171,10 @@ function useStageFields(columnId?: string) {
     enabled: !!columnId,
     queryKey: ["stage", "fields", columnId],
     queryFn: async (): Promise<StageField[]> => {
-      const { data, error } = await supabase
-        .from("stage_field")
-        .select("*")
-        .eq("column_id", columnId!)
-        .eq("active", true)
-        .order("ord");
-      if (error) throw error;
-      return (data || []) as any;
+      const res = await fetch(`/api/kanban/fields?columnId=${columnId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar campos da fase');
+      const rows = (await res.json()) as StageField[];
+      return rows.filter((f) => f.active !== false).sort((a,b)=>a.ord-b.ord);
     },
   });
 }
@@ -175,13 +184,10 @@ function useStageValues(projectId?: string, fieldIds?: string[]) {
     enabled: !!projectId && !!fieldIds?.length,
     queryKey: ["stage", "values", projectId, fieldIds?.join(",")],
     queryFn: async (): Promise<StageValue[]> => {
-      const { data, error } = await supabase
-        .from("stage_value")
-        .select("*")
-        .eq("project_id", projectId!)
-        .in("field_id", fieldIds!);
-      if (error) throw error;
-      return (data || []) as any;
+      const params = new URLSearchParams({ projectId: String(projectId), fieldIds: fieldIds!.join(',') });
+      const res = await fetch(`/api/stage/values?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar valores');
+      return (await res.json()) as any;
     },
   });
 }
@@ -191,12 +197,9 @@ function useTransitions(fromColumnId?: string) {
     enabled: !!fromColumnId,
     queryKey: ["kanban", "transitions-from", fromColumnId],
     queryFn: async (): Promise<Column[]> => {
-      const { data, error } = await supabase
-        .from("kanban_transition")
-        .select("to:to_column_id ( id, title, key )")
-        .eq("from_column_id", fromColumnId!);
-      if (error) throw error;
-      return (data || []).map((t: any) => t.to) as Column[];
+      const res = await fetch(`/api/kanban/transitions-from?from=${fromColumnId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar transições');
+      return (await res.json()) as Column[];
     },
   });
 }
@@ -206,14 +209,9 @@ function useHistory(projectId?: string) {
     enabled: !!projectId,
     queryKey: ["projeto", "historico", projectId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("projeto_event")
-        .select("*, from:from_column_id(title), to:to_column_id(title)")
-        .eq("projeto_id", projectId!)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error) throw error;
-      return (data || []) as any[];
+      const res = await fetch(`/api/projetos/${projectId}/historico`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar histórico');
+      return (await res.json()) as any[];
     },
   });
 }
@@ -248,9 +246,14 @@ export function ProjetoDetailPanel({
   }, [values]);
 
   const [local, setLocal] = useState<Record<string, any>>({});
+  const lastInitRef = useRef<string | null>(null);
   useEffect(() => {
     const initial: Record<string, any> = {};
     fields.forEach((f) => (initial[f.id] = valueByField.get(f.id) ?? null));
+    // Evita loop: só atualiza quando o conteúdo realmente mudou
+    const sig = JSON.stringify(initial);
+    if (lastInitRef.current === sig) return;
+    lastInitRef.current = sig;
     setLocal(initial);
   }, [fields, valueByField]);
 
@@ -263,14 +266,15 @@ export function ProjetoDetailPanel({
   /* salvar */
   const saveValues = useMutation({
     mutationFn: async () => {
-      const rows: StageValue[] = Object.keys(local).map((fid) => ({
-        project_id: projeto.id,
-        field_id: fid,
-        value: local[fid],
-      }));
-      if (!rows.length) return;
-      const { error } = await supabase.from("stage_value").upsert(rows);
-      if (error) throw error;
+      const items = Object.keys(local).map((fid) => ({ field_id: fid, value: local[fid] }));
+      if (!items.length) return;
+      const res = await fetch('/api/stage/values', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId: projeto.id, items })
+      });
+      if (!res.ok) throw new Error('Falha ao salvar dados');
     },
     onSuccess: async () => {
       toast.success("Dados salvos");
@@ -282,11 +286,13 @@ export function ProjetoDetailPanel({
   /* mover */
   const move = useMutation({
     mutationFn: async (toCol: string) => {
-      const { error } = await supabase.rpc("fn_move_projeto", {
-        p_projeto_id: projeto.id,
-        p_to_column_id: toCol,
+      const res = await fetch(`/api/projetos/${projeto.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kanban_column_id: toCol, entered_status_at: new Date().toISOString() })
       });
-      if (error) throw error;
+      if (!res.ok) throw new Error('Falha ao mover');
     },
     onSuccess: async () => {
       toast.success("Movido com sucesso");
@@ -396,7 +402,7 @@ export function ProjetoDetailPanel({
           {/* Corpo rolável */}
           <div className="flex-1 overflow-y-auto px-6 pb-6">
             <Tabs defaultValue="fase" className="h-full">
-              <TabsList className="sticky top-0 bg-background z-10">
+              <TabsList className="bg-background z-10">
                 <TabsTrigger value="fase">Fase atual</TabsTrigger>
                 <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
                 <TabsTrigger value="historico">Histórico</TabsTrigger>

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints
 import { toast } from 'sonner';
 
 export interface LogIntegracao {
@@ -19,28 +19,17 @@ export function useLogsIntegracoes() {
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['logs_integracoes'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('logs_integracoes')
-        .select('*')
-        .order('data', { ascending: false });
-
-      if (error) throw error;
-      return data as LogIntegracao[];
+      const res = await fetch('/api/integracoes/logs', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar logs');
+      return (await res.json()) as LogIntegracao[];
     }
   });
 
   const addLog = useMutation({
     mutationFn: async (log: Omit<LogIntegracao, 'id' | 'user_id' | 'created_at'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const { data, error } = await supabase
-        .from('logs_integracoes')
-        .insert([{ ...log, user_id: user?.id }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/integracoes/logs', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(log) });
+      if (!res.ok) throw new Error('Falha ao registrar log');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['logs_integracoes'] });
@@ -53,12 +42,8 @@ export function useLogsIntegracoes() {
 
   const deleteLog = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('logs_integracoes')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/integracoes/logs/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao remover log');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['logs_integracoes'] });

@@ -1,18 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
-import { Fatura, UnidadeConsumidora } from '@/types/supabase';
+import { Fatura } from '@/types/supabase';
+import { apiGet } from '@/lib/api';
 
 export function useFaturas() {
   const { data: faturas = [], isLoading } = useQuery({
     queryKey: ['faturas'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('faturas')
-        .select('*')
-        .order('mes_referencia', { ascending: false });
-      
-      if (error) throw error;
-      return data as Fatura[];
+      const res = await apiGet<Fatura[]>(`/api/faturas`);
+      if (!res.ok) throw new Error('Falha ao carregar faturas');
+      return res.data;
     }
   });
 
@@ -22,17 +18,14 @@ export function useFaturas() {
   };
 }
 
-export function useUnidadesConsumidoras() {
+/* export function useUnidadesConsumidoras() {
   const { data: unidades = [], isLoading } = useQuery({
     queryKey: ['unidades_consumidoras'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('unidades_consumidoras')
-        .select('*')
-        .order('numero_instalacao', { ascending: true });
-      
-      if (error) throw error;
-      return data as UnidadeConsumidora[];
+      // Mantido no front (ainda sem BFF). Migrar depois se necessário.
+      const res = await fetch('/api/unidades-consumidoras', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar unidades consumidoras');
+      return (await res.json()) as UnidadeConsumidora[];
     }
   });
 
@@ -40,4 +33,4 @@ export function useUnidadesConsumidoras() {
     unidades,
     isLoading
   };
-}
+} */

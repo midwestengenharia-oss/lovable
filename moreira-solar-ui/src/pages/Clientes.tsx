@@ -14,7 +14,7 @@ import { ClienteDetailPanel } from "@/components/panels/ClienteDetailPanel";
 import { getVendedoresMap } from "@/hooks/useVendedor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+// Clientes via BFF; nenhum acesso direto ao Supabase aqui
 import { toast } from "sonner";
 import { customAlphabet } from "nanoid/non-secure";
 
@@ -106,6 +106,56 @@ export default function Clientes() {
   };
 
   const podeEditar = true;
+
+  // Envio de convite via BFF (sem Supabase no front)
+  const handleEnviarConviteBff = async () => {
+    if (!clienteSelecionado) return;
+    const { telefone, nome, id } = clienteSelecionado;
+    if (!telefone) {
+      toast.error("Este cliente não possui telefone cadastrado.");
+      return;
+    }
+    try {
+      setIsInviting(true);
+      const gerarToken = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", 32);
+      const token = gerarToken();
+      const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const linkCadastro = `${window.location.origin}/cadastroCliente?token=${token}`;
+
+      const resUpd = await fetch(`/api/clientes/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          convite_token: token,
+          convite_expira_em: expiraEm.toISOString(),
+          convite_enviado_em: new Date().toISOString(),
+          convite_meio: 'whatsapp',
+          convite_aceito: false,
+        })
+      });
+      if (!resUpd.ok) throw new Error('Falha ao atualizar cliente');
+
+      // Envia mensagem via n8n
+      let telefoneFormatado = telefone.trim();
+      if (!telefoneFormatado.startsWith("+")) {
+        telefoneFormatado = "+55" + telefoneFormatado.replace(/\D/g, "");
+      }
+      await fetch("https://n8nwebhook.simplexsolucoes.com.br/webhook/whatsapp-convite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefone: telefoneFormatado, nome, link: linkCadastro }),
+      });
+
+      toast.success("Convite enviado com sucesso pelo WhatsApp!");
+      setInviteDialogOpen(false);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Erro ao enviar convite");
+    } finally {
+      setIsInviting(false);
+    }
+  };
 
   // ✅ Envio de convite via WhatsApp (n8n)
   const handleEnviarConvite = async () => {
@@ -397,7 +447,7 @@ export default function Clientes() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={handleEnviarConvite} disabled={isInviting}>
+            <Button onClick={handleEnviarConviteBff} disabled={isInviting}>
               {isInviting ? "Enviando..." : "Enviar Convite"}
             </Button>
           </DialogFooter>

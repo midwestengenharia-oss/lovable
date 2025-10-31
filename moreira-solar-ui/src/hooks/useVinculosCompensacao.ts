@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
+// BFF endpoints
 import { toast } from 'sonner';
 
 export interface VinculoCompensacao {
@@ -22,29 +22,17 @@ export function useVinculosCompensacao() {
   const { data: vinculos = [], isLoading } = useQuery({
     queryKey: ['vinculos_compensacao'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('vinculos_compensacao')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      return data as VinculoCompensacao[];
+      const res = await fetch('/api/vinculos-compensacao', { credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao carregar vínculos');
+      return (await res.json()) as VinculoCompensacao[];
     }
   });
 
   const addVinculo = useMutation({
     mutationFn: async (vinculo: Omit<VinculoCompensacao, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const { data, error } = await supabase
-        .from('vinculos_compensacao')
-        .insert([{ ...vinculo, user_id: user.id }])
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch('/api/vinculos-compensacao', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(vinculo) });
+      if (!res.ok) throw new Error('Falha ao criar vínculo');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vinculos_compensacao'] });
@@ -57,15 +45,9 @@ export function useVinculosCompensacao() {
 
   const updateVinculo = useMutation({
     mutationFn: async ({ id, ...updates }: Partial<VinculoCompensacao> & { id: string }) => {
-      const { data, error } = await supabase
-        .from('vinculos_compensacao')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
+      const res = await fetch(`/api/vinculos-compensacao/${id}`, { method: 'PATCH', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(updates) });
+      if (!res.ok) throw new Error('Falha ao atualizar vínculo');
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vinculos_compensacao'] });
@@ -78,12 +60,8 @@ export function useVinculosCompensacao() {
 
   const deleteVinculo = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('vinculos_compensacao')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/vinculos-compensacao/${id}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Falha ao remover vínculo');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vinculos_compensacao'] });

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from '@/contexts/AuthContext';
+import { apiGet } from '@/lib/api';
 
 export interface UserProfile {
   id: string;
@@ -13,23 +12,14 @@ export interface UserProfile {
 }
 
 export function useUserProfile() {
-  const { user } = useAuth();
-
   const { data: profile, isLoading } = useQuery({
-    queryKey: ['profile', user?.id],
+    queryKey: ['me'],
     queryFn: async () => {
-      if (!user) return null;
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-      
-      if (error) throw error;
-      return data as UserProfile;
+      const res = await apiGet<UserProfile>('/api/me');
+      if (!res.ok) return null;
+      return res.data as any;
     },
-    enabled: !!user
+    staleTime: 30_000,
   });
 
   return {

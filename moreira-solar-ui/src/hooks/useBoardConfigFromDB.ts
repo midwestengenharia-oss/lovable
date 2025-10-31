@@ -1,54 +1,49 @@
-// hooks/useBoardConfigFromDB.ts
+// hooks/useBoardConfigFromDB.ts (BFF version)
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 
 export type DBBoard = { id: string; slug: string; name: string; entity: string; active: boolean };
 export type DBColumn = {
-    id: string; board_id: string; key: string; title: string; ord: number;
-    terminal: boolean; active: boolean; wip_limit: number | null; sla_days: number | null;
-    color_header: string | null; color_badge: string | null; update_patch: any | null;
+  id: string; board_id: string; key: string; title: string; ord: number;
+  terminal: boolean; active: boolean; wip_limit: number | null; sla_days: number | null;
+  color_header: string | null; color_badge: string | null; update_patch: any | null;
 };
 export type DBTransition = { id: string; board_id: string; from_column_id: string; to_column_id: string };
 
 export type LoadedBoard = {
-    board: DBBoard;
-    columns: DBColumn[];
-    transitions: Record<string, string[]>; // fromColId -> [toColId]
+  board: DBBoard;
+  columns: DBColumn[];
+  transitions: Record<string, string[]>; // fromColId -> [toColId]
 };
 
 export function useBoardConfigFromDB(boardSlugOrId: string) {
-    return useQuery({
-        queryKey: ["kanban", "loaded", boardSlugOrId],
-        queryFn: async (): Promise<LoadedBoard> => {
-            // aceita slug ou id
-            const { data: board } = await supabase
-                .from("kanban_board")
-                .select("*")
-                .or(`id.eq.${boardSlugOrId},slug.eq.${boardSlugOrId}`)
-                .maybeSingle();
-            if (!board) throw new Error("Board não encontrado");
+  return useQuery({
+    queryKey: ["kanban", "loaded", boardSlugOrId],
+    queryFn: async (): Promise<LoadedBoard> => {
+      // boards
+      const resBoards = await fetch('/api/kanban/boards', { credentials: 'include' });
+      if (!resBoards.ok) throw new Error('Falha ao carregar boards');
+      const boards = (await resBoards.json()) as DBBoard[];
+      const board = boards.find(b => b.id === boardSlugOrId || b.slug === boardSlugOrId);
+      if (!board) throw new Error('Board não encontrado');
 
-            const { data: cols, error: eCols } = await supabase
-                .from("kanban_column")
-                .select("*")
-                .eq("board_id", board.id)
-                .eq("active", true)
-                .order("ord");
-            if (eCols) throw eCols;
+      // columns
+      const resCols = await fetch(`/api/kanban/columns?boardId=${board.id}`, { credentials: 'include' });
+      if (!resCols.ok) throw new Error('Falha ao carregar colunas');
+      const colsAll = (await resCols.json()) as DBColumn[];
+      const columns = colsAll.filter(c => c.active !== false).sort((a,b)=>a.ord-b.ord);
 
-            const { data: trans, error: eTrans } = await supabase
-                .from("kanban_transition")
-                .select("*")
-                .eq("board_id", board.id);
-            if (eTrans) throw eTrans;
+      // transitions
+      const resTrans = await fetch(`/api/kanban/transitions?boardId=${board.id}`, { credentials: 'include' });
+      if (!resTrans.ok) throw new Error('Falha ao carregar transições');
+      const trs = (await resTrans.json()) as DBTransition[];
+      const transitions: Record<string, string[]> = {};
+      (trs || []).forEach((t) => {
+        transitions[t.from_column_id] ||= [];
+        transitions[t.from_column_id].push(t.to_column_id);
+      });
 
-            const transitions: Record<string, string[]> = {};
-            (trans || []).forEach((t: DBTransition) => {
-                transitions[t.from_column_id] ||= [];
-                transitions[t.from_column_id].push(t.to_column_id);
-            });
-
-            return { board, columns: cols || [], transitions };
-        },
-    });
+      return { board, columns, transitions };
+    },
+  });
 }
+

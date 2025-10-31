@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import bcrypt from "bcryptjs";
 
 export default function CadastroCliente() {
     const [searchParams] = useSearchParams();
@@ -19,112 +17,61 @@ export default function CadastroCliente() {
     const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
-        const validarToken = async () => {
-            if (!token) {
-                toast.error("Token inválido!");
-                setLoading(false);
-                return;
-            }
-
-            const tokenDecoded = decodeURIComponent(token);
-
-            const { data, error } = await supabase
-                .from("clientes")
-                .select("*")
-                .eq("convite_token", tokenDecoded.trim())
-                .maybeSingle();
-
-            if (error) {
-                console.error("Erro Supabase:", error);
-                toast.error("Erro ao buscar convite no banco.");
-                setLoading(false);
-                return;
-            }
-
-            if (!data) {
-                toast.error("Convite não encontrado ou já utilizado.");
-                setLoading(false);
-                return;
-            }
-
-
-            const expiracao = new Date(data.convite_expira_em);
-            if (new Date() > expiracao) {
-                toast.error("O link de convite expirou.");
-                setLoading(false);
-                return;
-            }
-
-            setCliente(data);
-            setLoading(false);
-        };
-
-        validarToken();
-    }, [token]);
+  const validarToken = async () => {
+    if (!token) {
+      toast.error("Token inv�lido!");
+      setLoading(false);
+      return;
+    }
+    const tokenDecoded = decodeURIComponent(token);
+    try {
+      const res = await fetch('/api/clientes/convite/' + encodeURIComponent(tokenDecoded), { credentials: 'include' });
+      if (!res.ok) {
+        if (res.status === 404) toast.error('Convite n�o encontrado ou j� utilizado.');
+        else toast.error('Erro ao buscar convite.');
+        setLoading(false);
+        return;
+      }
+      const data = await res.json();
+      const expiracao = data?.convite_expira_em ? new Date(data.convite_expira_em) : null;
+      if (expiracao && new Date() > expiracao) {
+        toast.error('O link de convite expirou.');
+        setLoading(false);
+        return;
+      }
+      setCliente(data);
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao validar convite.');
+    }
+    setLoading(false);
+  };
+  validarToken();
+}, [token]);
 
     const handleSubmit = async () => {
-        if (!cliente) return;
-
-        if (cliente.convite_aceito) {
-            toast.error("Este convite já foi utilizado.");
-            return;
-        }
-
-        if (!senha.trim()) {
-            toast.error("A senha não pode estar vazia.");
-            return;
-        }
-
-        if (senha.length < 6) {
-            toast.error("A senha deve ter pelo menos 6 caracteres.");
-            return;
-        }
-
-        if (senha !== confirmarSenha) {
-            toast.error("As senhas não coincidem.");
-            return;
-        }
-
-        try {
-            setSubmitting(true);
-
-            // 🔐 Gerar hash da senha
-            const senhaHash = await bcrypt.hash(senha, 10);
-
-            const { data, error } = await supabase
-                .from("clientes")
-                .update({
-                    senha: senhaHash,
-                    convite_aceito: true,
-                    convite_token: null,
-                    convite_expira_em: null,
-                })
-                .eq("id", cliente.id)
-                .select(); // ← ADICIONE .select() para retornar os dados atualizados
-
-
-            if (error) {
-                console.error("❌ Erro no update:", error);
-                throw error;
-            }
-
-            if (!data || data.length === 0) {
-                throw new Error("Update não retornou dados. Verifique RLS.");
-            }
-
-            toast.success("Cadastro concluído com sucesso! Redirecionando...");
-
-            setTimeout(() => {
-                navigate("/login-cliente");
-            }, 1500);
-
-        } catch (err: any) {
-            console.error("❌ Erro completo:", err);
-            toast.error("Erro ao salvar: " + err.message);
-        } finally {
-            setSubmitting(false);
-        }
-    };
+  if (!cliente) return;
+  if (cliente.convite_aceito) { toast.error('Este convite j� foi utilizado.'); return; }
+  if (!senha.trim()) { toast.error('A senha n�o pode estar vazia.'); return; }
+  if (senha.length < 6) { toast.error('A senha deve ter pelo menos 6 caracteres.'); return; }
+  if (senha !== confirmarSenha) { toast.error('As senhas n�o coincidem.'); return; }
+  try {
+    setSubmitting(true);
+    const res = await fetch('/api/clientes/convite/' + encodeURIComponent(cliente.convite_token) + '/aceitar', {
+      method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: senha })
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j?.error || 'Falha ao concluir cadastro');
+    }
+    toast.success('Cadastro conclu�do com sucesso! Redirecionando...');
+    setTimeout(() => navigate('/login-cliente'), 1500);
+  } catch (err) {
+    console.error(err);
+    toast.error('Erro ao salvar');
+  } finally { setSubmitting(false); }
+};
 
     if (loading) {
         return (
@@ -146,7 +93,7 @@ export default function CadastroCliente() {
         <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
             <Card className="w-full max-w-md">
                 <CardHeader>
-                    <CardTitle>Cadastro - Moreira Solar ☀️</CardTitle>
+                    <CardTitle>Cadastro - Moreira Solar</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div>
@@ -210,3 +157,15 @@ export default function CadastroCliente() {
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
