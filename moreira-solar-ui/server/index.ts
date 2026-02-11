@@ -22,7 +22,7 @@ import { registerVendedoresRoutes } from './routes/vendedores';
 import { registerVinculosRoutes } from './routes/vinculos';
 import { registerIntegracoesRoutes } from './routes/integracoes';
 import { registerUnidadesRoutes } from './routes/unidades';
-import { registerAdminRoutes } from './routes/admin';
+import { registerAdminRoutes } from './routes/admin_routes';
 import { registerAuthLocalRoutes } from './routes/auth_local';
 
 const app = Fastify({ logger: true });

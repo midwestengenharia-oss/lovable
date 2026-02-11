@@ -107,8 +107,8 @@ export function executarSimulacao(
     return null;
   }
 
-  // Cálculos de geração
-  const baseUnit = maxPotW * parametros.geracaoKwp;
+  // Cálculos de geração (W → kWp: /1000)
+  const baseUnit = (maxPotW / 1000) * parametros.geracaoKwp;
   const modules = truncar(geracaoMeta / baseUnit, 1);
   const qtdMod = Math.max(1, Math.ceil(modules));
   const geracaoReal = Math.round(qtdMod * baseUnit);

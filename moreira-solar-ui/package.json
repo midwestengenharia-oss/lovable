@@ -8,6 +8,12 @@
     "dev:server": "tsx server/index.ts",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "up": "node scripts/dev-up.mjs",
+    "down": "node scripts/dev-down.mjs",
+    "logs": "docker compose logs -f",
+    "prod:up": "node scripts/prod-up.mjs",
+    "prod:down": "node scripts/prod-down.mjs",
+    "prod:logs": "docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f",
     "lint": "eslint .",
     "preview": "vite preview"
   },

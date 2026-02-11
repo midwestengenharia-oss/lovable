@@ -10,19 +10,21 @@ function required(name: string): string {
   return v;
 }
 
+const USE_KEYCLOAK = (process.env.USE_KEYCLOAK || 'true').toLowerCase() !== 'false';
+
 export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: process.env.PORT || '4000',
   SESSION_SECRET: required('SESSION_SECRET'),
   APP_BASE_URL: required('APP_BASE_URL'), // e.g. http://localhost:8080
-  OIDC_ISSUER_URL: required('OIDC_ISSUER_URL'), // e.g. http://keycloak:8080/realms/myrealm
-  OIDC_CLIENT_ID: required('OIDC_CLIENT_ID'),
-  OIDC_CLIENT_SECRET: required('OIDC_CLIENT_SECRET'),
+  OIDC_ISSUER_URL: USE_KEYCLOAK ? required('OIDC_ISSUER_URL') : (process.env.OIDC_ISSUER_URL || ''), // e.g. http://keycloak:8080/realms/myrealm
+  OIDC_CLIENT_ID: USE_KEYCLOAK ? required('OIDC_CLIENT_ID') : (process.env.OIDC_CLIENT_ID || ''),
+  OIDC_CLIENT_SECRET: USE_KEYCLOAK ? required('OIDC_CLIENT_SECRET') : (process.env.OIDC_CLIENT_SECRET || ''),
   OIDC_REDIRECT_PATH: process.env.OIDC_REDIRECT_PATH || '/api/auth/callback',
   SUPABASE_URL: required('SUPABASE_URL'),
   SUPABASE_SERVICE_ROLE_KEY: required('SUPABASE_SERVICE_ROLE_KEY'),
   LOGOUT_REDIRECT_PATH: process.env.LOGOUT_REDIRECT_PATH || '/auth',
-  USE_KEYCLOAK: (process.env.USE_KEYCLOAK || 'true').toLowerCase() !== 'false',
+  USE_KEYCLOAK: USE_KEYCLOAK,
   // Keycloak Admin API (criação de usuários via API)
   KEYCLOAK_BASE_URL: process.env.KEYCLOAK_BASE_URL || process.env.OIDC_ISSUER_URL?.replace(/\/realms\/.+$/, '') || '',
   KEYCLOAK_REALM: process.env.KEYCLOAK_REALM || process.env.OIDC_ISSUER_URL?.split('/realms/')[1] || '',

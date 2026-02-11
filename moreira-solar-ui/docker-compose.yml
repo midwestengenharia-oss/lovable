@@ -1,4 +1,3 @@
-version: '3.9'
 services:
   postgres:
     image: postgres:16
@@ -27,7 +26,27 @@ services:
     volumes:
       - minio:/data
 
+  # Fastify API (BFF)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on: []
+
+  # Web (SPA + reverse proxy /api)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - api
+
 volumes:
   pgdata:
   minio:
-

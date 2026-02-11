@@ -1,0 +1,21 @@
+:80 {
+  root * /usr/share/caddy
+  encode zstd gzip
+
+  # Proxy API to the Fastify service (preserve /api prefix)
+  handle /api* {
+    reverse_proxy api:4000
+  }
+
+  # Serve static files if they exist
+  @existing file
+  handle @existing {
+    file_server
+  }
+
+  # SPA fallback to index.html
+  handle {
+    rewrite * /index.html
+    file_server
+  }
+}

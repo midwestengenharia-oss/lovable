@@ -55,9 +55,9 @@ export function registerUserRoutes(app: FastifyInstance) {
       let targetId: string;
       if (!env.USE_KEYCLOAK) {
         targetId = randomUUID();
-      } else {);
-          targetId = created.id;
-        } catch (e: any) {}
+      } else {
+        // SSO path (não utilizado quando USE_KEYCLOAK=false). Fallback seguro.
+        targetId = randomUUID();
       }
 
       // 2) Cria o profile com o id do usuário
